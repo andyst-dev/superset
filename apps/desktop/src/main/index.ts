@@ -469,7 +469,7 @@ if (!gotTheLock) {
 		try {
 			setupAgentIntegrations();
 		} catch (error) {
-			console.error("[main] Failed to set up agent hooks:", error);
+			console.error("[main] Failed to set up agent integrations:", error);
 		}
 		try {
 			installBundledCliShim();

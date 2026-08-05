@@ -140,7 +140,7 @@ export const supportRouter = createTRPCRouter({
 			});
 
 			try {
-				await resend.emails.send({
+				const { error } = await resend.emails.send({
 					from: "Superset <noreply@superset.sh>",
 					to: SUPPORT_EMAIL,
 					replyTo: user.email,
@@ -153,6 +153,7 @@ export const supportRouter = createTRPCRouter({
 						input.report,
 					].join("\n"),
 				});
+				if (error) throw error;
 			} catch (error) {
 				console.error("[support/sendMigrationReport] failed", error);
 				throw new TRPCError({
@@ -256,7 +257,9 @@ export const supportRouter = createTRPCRouter({
 			}));
 
 			try {
-				await resend.emails.send({
+				// Resend reports API failures via the resolved `error` field, not by
+				// throwing — without this check a rejected email would "succeed".
+				const { error } = await resend.emails.send({
 					from: "Superset <noreply@superset.sh>",
 					to: SUPPORT_EMAIL,
 					// CC the reporter so they keep a copy and stay on the thread.
@@ -283,6 +286,7 @@ export const supportRouter = createTRPCRouter({
 						os: input.os ? sanitizeEmailBodyLine(input.os) : undefined,
 					}),
 				});
+				if (error) throw error;
 			} catch (error) {
 				console.error("[support/submitFeedback] failed", error);
 				throw new TRPCError({

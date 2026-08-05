@@ -1,4 +1,5 @@
 import {
+	closeSync,
 	existsSync,
 	openSync,
 	readFileSync,
@@ -11,6 +12,8 @@ import { boolean, CLIError, string } from "@superset/cli-framework";
 import { command } from "../../../lib/command";
 
 const MAX_ATTACHMENT_TOTAL_BYTES = 10 * 1024 * 1024;
+/** Mirrors the server's refine on submitFeedback input. */
+const MAX_ATTACHMENT_TOTAL_BASE64_CHARS = 14_000_000;
 const DIAGNOSTICS_LOG_TAIL_BYTES = 64 * 1024;
 const DIAGNOSTICS_LOG_TAIL_LINES = 200;
 
@@ -24,7 +27,11 @@ function readTail(filePath: string): string {
 	const length = Math.min(size, DIAGNOSTICS_LOG_TAIL_BYTES);
 	const buffer = Buffer.alloc(length);
 	const fd = openSync(filePath, "r");
-	readSync(fd, buffer, 0, length, size - length);
+	try {
+		readSync(fd, buffer, 0, length, size - length);
+	} finally {
+		closeSync(fd);
+	}
 	return buffer
 		.toString("utf-8")
 		.split("\n")
@@ -89,25 +96,32 @@ export default command({
 
 		const attachments: FeedbackAttachment[] = [];
 		let totalBytes = 0;
+		const addAttachment = (attachment: FeedbackAttachment) => {
+			// Base64 is what travels, and the server limit is on encoded size.
+			totalBytes += attachment.contentBase64.length;
+			if (totalBytes > MAX_ATTACHMENT_TOTAL_BASE64_CHARS) {
+				throw new CLIError("Attachments exceed the 10MB total limit");
+			}
+			attachments.push(attachment);
+		};
 		for (const rawPath of options.attach?.split(",") ?? []) {
 			const path = rawPath.trim();
 			if (!path) continue;
 			if (!existsSync(path)) {
 				throw new CLIError(`Attachment not found: ${path}`);
 			}
-			const bytes = readFileSync(path);
-			totalBytes += bytes.length;
-			if (totalBytes > MAX_ATTACHMENT_TOTAL_BYTES) {
+			// Reject oversized files before reading them into memory.
+			if (statSync(path).size > MAX_ATTACHMENT_TOTAL_BYTES) {
 				throw new CLIError("Attachments exceed the 10MB total limit");
 			}
-			attachments.push({
+			addAttachment({
 				filename: basename(path),
-				contentBase64: bytes.toString("base64"),
+				contentBase64: readFileSync(path).toString("base64"),
 			});
 		}
 		if (options.diagnostics) {
 			const bundle = collectDiagnostics();
-			if (bundle) attachments.push(bundle);
+			if (bundle) addAttachment(bundle);
 		}
 		if (attachments.length > 5) {
 			throw new CLIError("At most 5 attachments per submission");

@@ -159,14 +159,19 @@ function readPluginSkill(
  */
 function listBundledSkills(bundledPluginDir: string): string[] {
 	const skillsDir = path.join(bundledPluginDir, "skills");
-	return fs
-		.readdirSync(skillsDir, { withFileTypes: true })
-		.filter(
-			(entry) =>
-				entry.isDirectory() &&
-				fs.existsSync(path.join(skillsDir, entry.name, "SKILL.md")),
-		)
-		.map((entry) => entry.name);
+	try {
+		return fs
+			.readdirSync(skillsDir, { withFileTypes: true })
+			.filter(
+				(entry) =>
+					entry.isDirectory() &&
+					fs.existsSync(path.join(skillsDir, entry.name, "SKILL.md")),
+			)
+			.map((entry) => entry.name);
+	} catch (error) {
+		console.warn("[agent-setup] Failed to enumerate bundled skills:", error);
+		return [];
+	}
 }
 
 /** Copies a bundled skill's extra files (anything besides SKILL.md) verbatim. */
