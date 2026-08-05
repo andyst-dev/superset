@@ -155,9 +155,11 @@ function readPluginSkill(
 
 /**
  * Every skill in the bundled plugin ships everywhere automatically — adding a
- * skill to plugins/superset/skills/ requires no code change here.
+ * skill to plugins/superset/skills/ requires no code change here. Returns null
+ * on enumeration failure: the caller must abort (an empty desired set would
+ * make the reaper delete every previously-provisioned skill).
  */
-function listBundledSkills(bundledPluginDir: string): string[] {
+function listBundledSkills(bundledPluginDir: string): string[] | null {
 	const skillsDir = path.join(bundledPluginDir, "skills");
 	try {
 		return fs
@@ -170,7 +172,7 @@ function listBundledSkills(bundledPluginDir: string): string[] {
 			.map((entry) => entry.name);
 	} catch (error) {
 		console.warn("[agent-setup] Failed to enumerate bundled skills:", error);
-		return [];
+		return null;
 	}
 }
 
@@ -247,8 +249,16 @@ export async function createManagedSkills(
 		console.warn("[agent-setup] Failed to provision Claude plugin:", error);
 	}
 
+	const bundledSkills = listBundledSkills(bundledPluginDir);
+	if (bundledSkills === null) {
+		console.warn(
+			"[agent-setup] Skipping skill provisioning and reaping — bundled plugin unreadable",
+		);
+		return;
+	}
+
 	const desiredAgentsDirs = new Set<string>();
-	for (const pluginSkill of listBundledSkills(bundledPluginDir)) {
+	for (const pluginSkill of bundledSkills) {
 		// Prefixed dir name carries the namespace for agents without plugin
 		// support; frontmatter `name` is rewritten to match because the skill
 		// spec requires name == parent directory.

@@ -95,11 +95,11 @@ export default command({
 		}
 
 		const attachments: FeedbackAttachment[] = [];
-		let totalBytes = 0;
+		let totalBase64Chars = 0;
 		const addAttachment = (attachment: FeedbackAttachment) => {
 			// Base64 is what travels, and the server limit is on encoded size.
-			totalBytes += attachment.contentBase64.length;
-			if (totalBytes > MAX_ATTACHMENT_TOTAL_BASE64_CHARS) {
+			totalBase64Chars += attachment.contentBase64.length;
+			if (totalBase64Chars > MAX_ATTACHMENT_TOTAL_BASE64_CHARS) {
 				throw new CLIError("Attachments exceed the 10MB total limit");
 			}
 			attachments.push(attachment);
