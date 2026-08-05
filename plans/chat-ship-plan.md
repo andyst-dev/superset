@@ -75,7 +75,7 @@ type SessionClient = {
 
 Lint guards (CI): `protocol/` imports zod only; `core/` imports `protocol/` + stdlib only; `react/` is the only entry importing react; nothing imports react-dom/react-native/node builtins.
 
-## 2. Workstream B — host runtime (`packages/host-service/src/runtime/chat/`)
+## 2. Workstream B — host runtime (**AMENDED 2026-08-04:** now standalone `packages/chat-runtime`, owning its own `chat.db` — never host.db; exports `createChatRuntime({ dataDir })` plus, later, a mountable tRPC router + WS handler that host-service mounts in a few lines. Paths below map from `host-service/src/runtime/chat/` → `chat-runtime/src/`; the db/ section's host.db tables become CREATE-IF-NOT-EXISTS bootstrap in the package's own file.)
 
 ```
 packages/host-service/src/runtime/chat/
@@ -189,6 +189,8 @@ Serial worst case ~4 weeks; with adapter parallelization (M3/M4 concurrent) ~3 w
 - **Reducer property tests**: shuffle/duplicate/drop envelope sequences must converge; replay(journal) === live fold; transcript never shrinks.
 - **Headless E2E** (M2) runs in CI; **CDP E2E** (M5) follows the AGENTS.md evidence-gate rules (real journey, screenshots, no synthetic-only claims).
 - Lint boundaries from §1/§2 run in CI. `bun run lint` + `typecheck` green before every push (repo rule).
+
+**Workstream B build notes (2026-08-04):** `packages/chat-runtime` landed (29 tests). Two facts to preserve: (1) better-sqlite3 in the bun store is compiled for Electron's ABI, so tests inject `bun:sqlite` through the `SqliteDatabase` seam — both drivers satisfy the interface structurally with zero casts, but the better-sqlite3 path is verified by types + host-service parity, not test execution; exercise it in the M5 CDP pass. (2) Boundary rule for the mount: **host passes resolved facts, never concepts** — runtime receives opaque `workspaceId` + resolved `cwd`/env, never imports workspace logic; host.db never grows a chat table. Also: `host-service/src/runtime/chat/` is occupied by legacy mastra code — the mount lives elsewhere or that subtree renames at flag-flip.
 
 ## 6. Risks & mitigations (carried from pre-flight review)
 
