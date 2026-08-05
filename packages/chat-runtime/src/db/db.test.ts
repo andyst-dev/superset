@@ -15,7 +15,7 @@ function init() {
 }
 
 describe("chat.db bootstrap", () => {
-	test("creates its own db file under dataDir and survives reopen", () => {
+	test("creates its own db file under dataDir and survives reopen", async () => {
 		const dataDir = mkdtempSync(join(tmpdir(), "chat-runtime-"));
 
 		const first = createChatRuntime({ dataDir, openDatabase: openBunSqlite });
@@ -25,7 +25,7 @@ describe("chat.db bootstrap", () => {
 			item: agentMessage("a", "hello"),
 			turnId: "turn-1",
 		});
-		first.dispose();
+		await first.dispose();
 
 		expect(existsSync(join(dataDir, CHAT_DB_FILENAME))).toBe(true);
 
@@ -43,16 +43,16 @@ describe("chat.db bootstrap", () => {
 		expect(replay.ok).toBe(true);
 		if (!replay.ok) return;
 		expect(replay.envelopes).toHaveLength(1);
-		second.dispose();
+		await second.dispose();
 	});
 
-	test("creates dataDir when it does not exist", () => {
+	test("creates dataDir when it does not exist", async () => {
 		const dataDir = join(
 			mkdtempSync(join(tmpdir(), "chat-runtime-")),
 			"nested",
 		);
 		const runtime = createChatRuntime({ dataDir, openDatabase: openBunSqlite });
 		expect(existsSync(join(dataDir, CHAT_DB_FILENAME))).toBe(true);
-		runtime.dispose();
+		await runtime.dispose();
 	});
 });

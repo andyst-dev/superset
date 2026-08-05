@@ -1,4 +1,8 @@
-import type { Cursor, DurableEvent } from "@superset/chat/protocol";
+import type {
+	Cursor,
+	DurableEnvelope,
+	DurableEvent,
+} from "@superset/chat/protocol";
 import { durableEventSchema } from "@superset/chat/protocol";
 import type { ChatQueries } from "../db/queries";
 import type { ChatSessionInit } from "./epoch";
@@ -44,6 +48,10 @@ export class ChatJournal {
 	}
 
 	append(sessionId: string, event: DurableEvent): Cursor {
+		return this.appendEnvelope(sessionId, event).cursor;
+	}
+
+	appendEnvelope(sessionId: string, event: DurableEvent): DurableEnvelope {
 		const parsed = durableEventSchema.parse(event);
 		const cache = this.cacheFor(sessionId);
 		const seq = cache.lastSeq + 1;
@@ -71,7 +79,13 @@ export class ChatJournal {
 		cache.title = next.title;
 		cache.queuedItemIds = next.queuedItemIds;
 
-		return { epoch: cache.epoch, seq };
+		return {
+			v: 1,
+			sessionId,
+			cursor: { epoch: cache.epoch, seq },
+			ts,
+			event: parsed,
+		};
 	}
 
 	cursor(sessionId: string): Cursor {

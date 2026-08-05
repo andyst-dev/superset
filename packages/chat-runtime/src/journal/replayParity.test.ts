@@ -161,6 +161,6 @@ describe("journal replay parity", () => {
 			status: "idle",
 			title: "Fixtures",
 		});
-		runtime.dispose();
+		await runtime.dispose();
 	});
 });
