@@ -81,15 +81,28 @@ export function usePersistentWebview({
 					},
 				},
 			);
-		// `ctx.actions.close()` runs the standard onBeforeClose hook chain,
-		// matching the renderer CLOSE_PANE hotkey path.
+		// ⌘W/⌘R stay on the dedicated events: main emits `close-pane` /
+		// `reload-pane` for them BEFORE app-chord matching, so they never
+		// arrive via `app-hotkey`. `ctx.actions.close()` runs the standard
+		// onBeforeClose hook chain, matching the renderer CLOSE_PANE hotkey
+		// path. All other registered chords arrive as `app-hotkey` and are
+		// re-dispatched as synthetic keydowns on `document`, where
+		// react-hotkeys-hook attaches its listeners.
+		const closePaneSub = electronTrpcClient.browser.onClosePane.subscribe(
+			{ paneId },
+			{
+				onData: () => {
+					void ctxRef.current.actions.close();
+				},
+			},
+		);
 		const appHotkeySub = electronTrpcClient.browser.onAppHotkey.subscribe(
 			{ paneId },
 			{
 				onData: (chord: string) => {
 					const event = dispatchChordEvent(chord);
 					if (event) {
-						window.dispatchEvent(event);
+						document.dispatchEvent(event);
 					}
 				},
 			},
@@ -105,6 +118,7 @@ export function usePersistentWebview({
 		return () => {
 			newWindowSub.unsubscribe();
 			contextMenuSub.unsubscribe();
+			closePaneSub.unsubscribe();
 			appHotkeySub.unsubscribe();
 			reloadPaneSub.unsubscribe();
 		};

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-	BROWSER_PANE_EXCLUDED_CHORDS,
 	canonicalizeChord,
 	chordToEventInit,
 	inputToChord,
@@ -10,9 +9,18 @@ import {
 } from "./browser-pane-chords";
 
 const CHORDS = new Set(
-	["meta+b", "meta+l", "meta+w", "meta+shift+k", "meta+alt+arrowleft"].map(
-		canonicalizeChord,
-	),
+	[
+		"meta+b",
+		"meta+l",
+		"meta+w",
+		"meta+shift+k",
+		"meta+alt+arrowleft",
+		// registered chords that collide with guest-owned shortcuts — exclusion
+		// must take priority over the index
+		"meta+f",
+		"meta+p",
+		"meta+g",
+	].map(canonicalizeChord),
 );
 
 describe("inputToChord", () => {
@@ -54,6 +62,17 @@ describe("inputToChord", () => {
 		).toBeNull();
 	});
 
+	test("returns null for IME composition keydowns", () => {
+		expect(
+			inputToChord({
+				type: "keyDown",
+				code: "KeyB",
+				meta: true,
+				isComposing: true,
+			}),
+		).toBeNull();
+	});
+
 	test("returns null for non-keyDown types", () => {
 		expect(
 			inputToChord({ type: "keyUp", code: "KeyB", meta: true }),
@@ -74,17 +93,44 @@ describe("matchAppChord", () => {
 		).toBeNull();
 	});
 
-	test("leaves page find to the guest (⌘F excluded)", () => {
+	test("exclusion wins over a registered chord (⌘F find)", () => {
 		expect(
 			matchAppChord({ type: "keyDown", code: "KeyF", meta: true }, CHORDS),
 		).toBeNull();
-		expect(BROWSER_PANE_EXCLUDED_CHORDS.has("meta+f")).toBeTrue();
 	});
 
-	test("leaves page print to the guest (⌘P excluded)", () => {
+	test("exclusion wins over a registered chord (⌘P print)", () => {
 		expect(
 			matchAppChord({ type: "keyDown", code: "KeyP", meta: true }, CHORDS),
 		).toBeNull();
+	});
+
+	test("exclusion wins over a registered chord (⌘G find-next)", () => {
+		expect(
+			matchAppChord({ type: "keyDown", code: "KeyG", meta: true }, CHORDS),
+		).toBeNull();
+	});
+
+	test("guest editing shortcuts stay with the page (⌘C/⌘V/⌘X/⌘A/⌘Z + ctrl variants)", () => {
+		for (const [code, mod] of [
+			["KeyC", "meta"],
+			["KeyV", "meta"],
+			["KeyX", "meta"],
+			["KeyA", "meta"],
+			["KeyZ", "meta"],
+			["KeyC", "ctrl"],
+			["KeyV", "ctrl"],
+			["KeyX", "ctrl"],
+			["KeyA", "ctrl"],
+			["KeyZ", "ctrl"],
+		] as const) {
+			expect(
+				matchAppChord(
+					{ type: "keyDown", code, [mod]: true },
+					new Set([canonicalizeChord(`${mod}+${code[3].toLowerCase()}`)]),
+				),
+			).toBeNull();
+		}
 	});
 
 	test("empty chord index never matches", () => {

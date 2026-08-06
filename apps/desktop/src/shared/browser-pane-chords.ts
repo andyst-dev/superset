@@ -69,11 +69,15 @@ export interface BrowserPaneInput {
 	control?: boolean;
 	alt?: boolean;
 	shift?: boolean;
+	isComposing?: boolean;
 }
 
 /** `before-input-event` Input → canonical chord, or null for modifier-only / unknown keys. */
 export function inputToChord(input: BrowserPaneInput): string | null {
 	if (input.type !== undefined && input.type !== "keyDown") return null;
+	// IME composition: keydown during CJK / dead-key composition must not
+	// trigger hotkeys, mirroring the renderer's `eventToChord` guard.
+	if (input.isComposing) return null;
 	if (input.code === undefined) return null;
 	const key = normalizeToken(input.code);
 	if (isIgnorableKey(key)) return null;
@@ -109,12 +113,29 @@ export function eventToChord(event: KeyboardEvent): string | null {
 	return [...mods, key].join("+");
 }
 
-// Chords the app must NOT claim from a browser pane: the guest page's own
-// find / print / find-next behavior is more useful there than any of the
-// pane-scoped app bindings sharing the chord. (meta+p print → QUICK_OPEN,
-// meta+f find → FIND_IN_* family, meta+g find-next → RUN_WORKSPACE_COMMAND.)
+// Chords the app must NOT claim from a browser pane — the guest page's own
+// editing / navigation behavior is more useful there than any of the
+// pane-scoped app bindings sharing the chord:
+//   - meta+a/c/v/x/z + ctrl+a/c/v/x/z: select-all, copy, paste, cut, undo
+//     (no app binding uses these, but the guest must always keep them)
+//   - meta+p print → QUICK_OPEN, meta+f find → FIND_IN_* family,
+//     meta+g find-next → RUN_WORKSPACE_COMMAND
 export const BROWSER_PANE_EXCLUDED_CHORDS = new Set(
-	["meta+f", "meta+p", "meta+g"].map(canonicalizeChord),
+	[
+		"meta+a",
+		"meta+c",
+		"meta+v",
+		"meta+x",
+		"meta+z",
+		"ctrl+a",
+		"ctrl+c",
+		"ctrl+v",
+		"ctrl+x",
+		"ctrl+z",
+		"meta+f",
+		"meta+p",
+		"meta+g",
+	].map(canonicalizeChord),
 );
 
 /**

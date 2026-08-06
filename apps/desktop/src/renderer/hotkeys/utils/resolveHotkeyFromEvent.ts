@@ -84,10 +84,16 @@ let registeredAppChords = buildRegisteredAppChords(
 // Mirror the index to the main process so browser panes (guest webContents,
 // out-of-process) can match the same chords in `before-input-event` and
 // forward matches back for re-dispatch. Fire-and-forget: the mutation is
-// cheap and the main-side set is replaced wholesale.
+// cheap and the main-side set is replaced wholesale. If the IPC channel
+// isn't ready yet (startup / teardown) the main-side index just stays
+// empty until the next rebuild — browser-pane hotkeys degrade gracefully.
 function pushAppChordsToMain(): void {
 	const chords = [...registeredAppChords.keys()];
-	void electronTrpcClient.browser.setAppChords.mutate({ chords });
+	void electronTrpcClient.browser.setAppChords
+		.mutate({ chords })
+		.catch((error: unknown) => {
+			console.warn("Failed to push app chords to main process", error);
+		});
 }
 
 function rebuild() {
