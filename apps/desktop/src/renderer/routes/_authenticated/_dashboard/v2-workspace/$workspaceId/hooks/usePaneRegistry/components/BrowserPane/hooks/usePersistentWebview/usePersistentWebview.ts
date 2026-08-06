@@ -92,7 +92,13 @@ export function usePersistentWebview({
 			{ paneId },
 			{
 				onData: () => {
-					void ctxRef.current.actions.close();
+					void (async () => {
+						try {
+							await ctxRef.current.actions.close();
+						} catch (error) {
+							console.warn("Failed to close browser pane", error);
+						}
+					})();
 				},
 			},
 		);

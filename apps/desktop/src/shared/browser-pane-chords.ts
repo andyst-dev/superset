@@ -146,10 +146,34 @@ export function matchAppChord(
 	input: BrowserPaneInput,
 	chords: ReadonlySet<string>,
 ): string | null {
+	if (isGuestOwnedShortcut(input)) return null;
 	const chord = inputToChord(input);
 	if (!chord) return null;
-	if (BROWSER_PANE_EXCLUDED_CHORDS.has(chord)) return null;
 	return chords.has(chord) ? chord : null;
+}
+
+// Guest editing shortcuts are LOGICAL (undo is ⌘Z regardless of layout), so
+// the physical-code exclusion table above misses them on non-QWERTY layouts
+// (e.g. ⌘Z undo on AZERTY is physical KeyW, which collides with the app's
+// CLOSE_PANE chord). Match the produced character (`input.key`) for this
+// family instead — Electron reports the character the OS layout produces,
+// which is exactly what the guest page's own editing shortcuts act on.
+const GUEST_EDITING_KEYS = new Set(["a", "c", "v", "x", "z"]);
+
+function isGuestEditingShortcut(input: BrowserPaneInput): boolean {
+	if (!(input.meta || input.control)) return false;
+	const key = (input.key ?? "").toLowerCase();
+	return GUEST_EDITING_KEYS.has(key);
+}
+
+/**
+ * True if `input` must stay with the guest page (its own editing / find /
+ * print shortcuts) rather than be claimed as an app chord.
+ */
+export function isGuestOwnedShortcut(input: BrowserPaneInput): boolean {
+	if (isGuestEditingShortcut(input)) return true;
+	const chord = inputToChord(input);
+	return chord !== null && BROWSER_PANE_EXCLUDED_CHORDS.has(chord);
 }
 
 // Inverse of `normalizeToken`: canonical token → DOM `KeyboardEvent.code`.

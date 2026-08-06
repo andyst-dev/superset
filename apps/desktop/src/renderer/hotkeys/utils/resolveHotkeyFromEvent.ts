@@ -87,12 +87,33 @@ let registeredAppChords = buildRegisteredAppChords(
 // cheap and the main-side set is replaced wholesale. If the IPC channel
 // isn't ready yet (startup / teardown) the main-side index just stays
 // empty until the next rebuild — browser-pane hotkeys degrade gracefully.
+//
+// On rejection, retry once with a short delay instead of dropping the
+// update: the channel typically comes up within a second of the renderer
+// booting, and the NEXT rebuild (override/layout change) also re-pushes,
+// so a single delayed retry keeps the main-side index from staying stale
+// for the whole session.
+let pendingChordsRetry: ReturnType<typeof setTimeout> | null = null;
+
 function pushAppChordsToMain(): void {
 	const chords = [...registeredAppChords.keys()];
 	void electronTrpcClient.browser.setAppChords
 		.mutate({ chords })
 		.catch((error: unknown) => {
 			console.warn("Failed to push app chords to main process", error);
+			if (pendingChordsRetry) return;
+			pendingChordsRetry = setTimeout(() => {
+				pendingChordsRetry = null;
+				const latest = [...registeredAppChords.keys()];
+				void electronTrpcClient.browser.setAppChords
+					.mutate({ chords: latest })
+					.catch((retryError: unknown) => {
+						console.warn(
+							"Retry: failed to push app chords to main process",
+							retryError,
+						);
+					});
+			}, 1_000);
 		});
 }
 

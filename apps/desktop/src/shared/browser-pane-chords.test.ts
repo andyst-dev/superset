@@ -118,11 +118,11 @@ describe("matchAppChord", () => {
 			["KeyX", "meta"],
 			["KeyA", "meta"],
 			["KeyZ", "meta"],
-			["KeyC", "ctrl"],
-			["KeyV", "ctrl"],
-			["KeyX", "ctrl"],
-			["KeyA", "ctrl"],
-			["KeyZ", "ctrl"],
+			["KeyC", "control"],
+			["KeyV", "control"],
+			["KeyX", "control"],
+			["KeyA", "control"],
+			["KeyZ", "control"],
 		] as const) {
 			expect(
 				matchAppChord(
@@ -131,6 +131,23 @@ describe("matchAppChord", () => {
 				),
 			).toBeNull();
 		}
+	});
+
+	test("guest undo stays with the page on non-QWERTY layouts (logical key match)", () => {
+		// AZERTY: physical KeyW produces "z" (undo is ⌘Z logically), which
+		// collides with the app's CLOSE_PANE (meta+w) chord — the produced
+		// character must win so undo reaches the page.
+		expect(
+			matchAppChord(
+				{
+					type: "keyDown",
+					code: "KeyW",
+					key: "z",
+					meta: true,
+				},
+				new Set([canonicalizeChord("meta+w")]),
+			),
+		).toBeNull();
 	});
 
 	test("empty chord index never matches", () => {
