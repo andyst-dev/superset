@@ -5,6 +5,7 @@ import type {
 	BrowserPaneData,
 	PaneViewerData,
 } from "renderer/routes/_authenticated/_dashboard/v2-workspace/$workspaceId/types";
+import { dispatchChordEvent } from "shared/browser-pane-chords";
 import { browserRuntimeRegistry } from "../../browserRuntimeRegistry";
 import { DEFAULT_BROWSER_URL } from "../../constants";
 
@@ -82,11 +83,14 @@ export function usePersistentWebview({
 			);
 		// `ctx.actions.close()` runs the standard onBeforeClose hook chain,
 		// matching the renderer CLOSE_PANE hotkey path.
-		const closePaneSub = electronTrpcClient.browser.onClosePane.subscribe(
+		const appHotkeySub = electronTrpcClient.browser.onAppHotkey.subscribe(
 			{ paneId },
 			{
-				onData: () => {
-					void ctxRef.current.actions.close();
+				onData: (chord: string) => {
+					const event = dispatchChordEvent(chord);
+					if (event) {
+						window.dispatchEvent(event);
+					}
 				},
 			},
 		);
@@ -101,7 +105,7 @@ export function usePersistentWebview({
 		return () => {
 			newWindowSub.unsubscribe();
 			contextMenuSub.unsubscribe();
-			closePaneSub.unsubscribe();
+			appHotkeySub.unsubscribe();
 			reloadPaneSub.unsubscribe();
 		};
 	}, [paneId]);

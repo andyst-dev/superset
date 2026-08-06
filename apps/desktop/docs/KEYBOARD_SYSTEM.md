@@ -144,6 +144,7 @@ The v1→v2 hotkey storage migration was shipped April 2026 and removed in commi
 
 | Item | Status |
 |---|---|
+| **Browser-pane hotkey forwarding** — guest webContents swallow unclaimed chords (⌘B/⌘L dead, ⌘O shadowed by menu) | **Fixed** in `main/lib/browser/browser-manager.ts`: the renderer pushes its chord index to main and `before-input-event` forwards matches back for re-dispatch; guest find/print (⌘F/⌘P/⌘G) stay with the page. |
 | **Menu accelerator sync** — `main/lib/menu.ts` hardcodes `CmdOrCtrl+R/,//Shift+Q`; they shadow user rebinds | Demand-driven. The single concrete user-visible gap. |
 | **v1 terminal handler** uses catch-all `ctrl/meta` skip → starves TUIs of unbound chords like Ctrl+R | Tracked in `plans/20260409-tui-hotkey-forwarding.md`; v2 already correct. |
 | **AltGr first-class binding token** | Reserved but never wired. AltGr is suppressed at match time, but a user can't *record* `AltGr+E` as their own chord. Drop or implement on demand. |
