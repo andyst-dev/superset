@@ -158,10 +158,14 @@ export function matchAppChord(
 // CLOSE_PANE chord). Match the produced character (`input.key`) for this
 // family instead — Electron reports the character the OS layout produces,
 // which is exactly what the guest page's own editing shortcuts act on.
+//
+// Shift-gated chords are NOT guest editing shortcuts: ⌘⇧C is the app's
+// COPY_PATH and must keep forwarding (the guest's copy is plain ⌘C).
 const GUEST_EDITING_KEYS = new Set(["a", "c", "v", "x", "z"]);
 
 function isGuestEditingShortcut(input: BrowserPaneInput): boolean {
 	if (!(input.meta || input.control)) return false;
+	if (input.shift) return false;
 	const key = (input.key ?? "").toLowerCase();
 	return GUEST_EDITING_KEYS.has(key);
 }

@@ -150,6 +150,23 @@ describe("matchAppChord", () => {
 		).toBeNull();
 	});
 
+	test("shift-gated chords are not guest editing shortcuts (⌘⇧C COPY_PATH)", () => {
+		// The guest's copy is plain ⌘C; ⌘⇧C is the app's COPY_PATH and must
+		// keep forwarding even though the produced character is "c".
+		expect(
+			matchAppChord(
+				{
+					type: "keyDown",
+					code: "KeyC",
+					key: "C",
+					meta: true,
+					shift: true,
+				},
+				new Set([canonicalizeChord("meta+shift+c")]),
+			),
+		).toBe("meta+shift+c");
+	});
+
 	test("empty chord index never matches", () => {
 		expect(
 			matchAppChord({ type: "keyDown", code: "KeyB", meta: true }, new Set()),

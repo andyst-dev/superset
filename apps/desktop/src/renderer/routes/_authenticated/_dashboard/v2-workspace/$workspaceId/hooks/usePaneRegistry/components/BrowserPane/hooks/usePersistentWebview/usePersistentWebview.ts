@@ -96,7 +96,7 @@ export function usePersistentWebview({
 						try {
 							await ctxRef.current.actions.close();
 						} catch (error) {
-							console.warn("Failed to close browser pane", error);
+							console.warn(`Failed to close browser pane (${paneId})`, error);
 						}
 					})();
 				},
