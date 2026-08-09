@@ -56,7 +56,10 @@ describe("slugifyPrompt", () => {
 
 describe("generateBranchNameFromPrompt", () => {
 	afterEach(() => {
+		getSmallModelMock.mockClear();
+		getSmallModelMock.mockImplementation(async () => ({ id: "small-model" }));
 		generateTitleMock.mockClear();
+		generateTitleMock.mockImplementation(async () => "feature-branch");
 	});
 
 	test("uses the generated name when it is a plausible branch name", async () => {
@@ -104,8 +107,7 @@ describe("generateBranchNameFromPrompt", () => {
 		expect(await generateBranchNameFromPrompt("add auth flow", [])).toBeNull();
 	});
 
-	test("returns null when generation rejects (timeout)", async () => {
-		getSmallModelMock.mockImplementation(async () => ({ id: "small-model" }));
+	test("returns null when generation rejects", async () => {
 		generateTitleMock.mockImplementation(async () => {
 			throw new Error("timed out after 5000ms");
 		});
