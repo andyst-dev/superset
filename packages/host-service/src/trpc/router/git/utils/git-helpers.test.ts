@@ -28,7 +28,7 @@ function createRemoteProbeGit(
 				activeProbes++;
 				maxConcurrentProbes = Math.max(maxConcurrentProbes, activeProbes);
 				try {
-					await new Promise((resolve) => setTimeout(resolve, 10));
+					await Promise.resolve();
 					if (!existingRefs.has(ref)) throw new Error("missing ref");
 					return ref;
 				} finally {
