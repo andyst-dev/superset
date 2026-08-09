@@ -190,10 +190,11 @@ describe("resolveBaseComparison (integration)", () => {
 			baseRef: "feature/parent",
 			fetchTarget: null,
 		});
+		if (!base) throw new Error("expected base comparison");
 
 		// The "Against base" view: diff the base ref against HEAD. This is
 		// the exact pipeline that rendered empty before the fix.
-		const files = await getChangedFilesForDiff(git, [`${base!.baseRef}..HEAD`]);
+		const files = await getChangedFilesForDiff(git, [`${base.baseRef}..HEAD`]);
 		expect(files.map((f) => f.path)).toEqual(["child.md"]);
 	});
 
@@ -201,6 +202,22 @@ describe("resolveBaseComparison (integration)", () => {
 		await git.raw(["update-ref", "refs/remotes/origin/feature", "HEAD"]);
 		await git.raw(["checkout", "-b", "feature"]);
 		await commitFile(git, repo, "feature.md", "x", "feature work");
+		expect(await resolveBaseComparison(git, "feature")).toEqual({
+			branchName: "feature",
+			baseRef: "origin/feature",
+			fetchTarget: { remote: "origin", branch: "feature" },
+		});
+	});
+
+	test("prefers origin when both origin and upstream have the branch", async () => {
+		// Put upstream first in git's configured remote order so origin's
+		// priority cannot depend on whichever remote happens to be listed first.
+		await git.raw(["remote", "remove", "origin"]);
+		await git.raw(["remote", "add", "upstream", "https://example.com/up.git"]);
+		await git.raw(["remote", "add", "origin", "https://example.com/repo.git"]);
+		await git.raw(["update-ref", "refs/remotes/upstream/feature", "HEAD"]);
+		await git.raw(["update-ref", "refs/remotes/origin/feature", "HEAD"]);
+
 		expect(await resolveBaseComparison(git, "feature")).toEqual({
 			branchName: "feature",
 			baseRef: "origin/feature",

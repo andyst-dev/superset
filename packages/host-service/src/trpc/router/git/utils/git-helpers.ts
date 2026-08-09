@@ -188,22 +188,34 @@ export async function resolveBaseComparison(
 	// branch when no remote ref exists — e.g. a stacked workspace whose
 	// base is another LOCAL branch that has never been pushed — instead of
 	// leaving the "Against base" diff silently empty (#5298).
-	const remotes = await git
+	const remotes: string[] = await git
 		.getRemotes()
 		.then((rs) => rs.map((r) => r.name))
 		.catch(() => []);
-	for (const remote of remotes) {
-		const remoteRefExists = await git
-			.raw(["rev-parse", "--verify", `refs/remotes/${remote}/${branchName}`])
-			.then(() => true)
-			.catch(() => false);
-		if (remoteRefExists) {
-			return {
-				branchName,
-				baseRef: `${remote}/${branchName}`,
-				fetchTarget: { remote, branch: branchName },
-			};
-		}
+	// Preserve the documented origin fallback regardless of git's remote
+	// listing order. Probe every remote concurrently, but choose the first
+	// successful result from this deterministic priority order rather than
+	// whichever subprocess happens to finish first.
+	const prioritizedRemotes = [
+		...(remotes.includes("origin") ? ["origin"] : []),
+		...remotes.filter((remote) => remote !== "origin"),
+	];
+	const remoteRefMatches = await Promise.all(
+		prioritizedRemotes.map(async (remote) => {
+			const exists = await git
+				.raw(["rev-parse", "--verify", `refs/remotes/${remote}/${branchName}`])
+				.then(() => true)
+				.catch(() => false);
+			return exists ? remote : null;
+		}),
+	);
+	const matchedRemote = remoteRefMatches.find((remote) => remote !== null);
+	if (matchedRemote) {
+		return {
+			branchName,
+			baseRef: `${matchedRemote}/${branchName}`,
+			fetchTarget: { remote: matchedRemote, branch: branchName },
+		};
 	}
 	const localRefExists = await git
 		.raw(["rev-parse", "--verify", `refs/heads/${branchName}`])
