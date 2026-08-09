@@ -73,16 +73,10 @@ export default command({
 		const failures: string[] = [];
 		const stopped: Array<{ label: string; pid: number }> = [];
 
-		// Only remove each manifest once the process is CONFIRMED dead: a
-		// survivor must stay discoverable by `superset start`/`stop` rather
-		// than being orphaned without a manifest. A throw from stopProcess
-		// (e.g. SIGTERM refused) is recorded and daemon cleanup still runs.
+		// Remove a manifest only when stopProcess returns null, confirming exit.
+		// A thrown stop leaves process state unknown, so retain the manifest,
+		// record the failure, and continue cleaning up the other daemon.
 		if (manifest && isProcessAlive(manifest.pid)) {
-			// `survived` is null only on a CONFIRMED clean stop. A throw
-			// from stopProcess (e.g. SIGTERM/SIGKILL refused with EPERM)
-			// leaves the process state unknown — it must NOT collapse to
-			// the clean-stop sentinel, or the manifest would be removed
-			// while the process is still running (cubic P2).
 			let survived: number | null;
 			let stopError: Error | null = null;
 			try {
