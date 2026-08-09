@@ -131,3 +131,8 @@ export const useNewWorkspaceDraftStore = create<NewWorkspaceDraftState>(
 			})),
 	}),
 );
+
+/** Clears any draft preserved for the full-page handoff once that route is left. */
+export function resetNewWorkspaceDraftOnRouteLeave() {
+	useNewWorkspaceDraftStore.getState().resetDraft();
+}

@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { useNewWorkspaceDraftStore } from "./new-workspace-draft";
+import {
+	resetNewWorkspaceDraftOnRouteLeave,
+	useNewWorkspaceDraftStore,
+} from "./new-workspace-draft";
 import { useNewWorkspaceModalStore } from "./new-workspace-modal";
 
 const SETUP_SCRIPT_PROMPT = "Write a setup script for this project";
@@ -56,5 +59,18 @@ describe("new workspace modal store (#5372)", () => {
 			SETUP_SCRIPT_PROMPT,
 		);
 		expect(useNewWorkspaceModalStore.getState().isOpen).toBeFalse();
+	});
+
+	test("leaving the full-page flow clears the preserved handoff draft", () => {
+		const draftStore = useNewWorkspaceDraftStore.getState();
+		draftStore.updateDraft({ prompt: SETUP_SCRIPT_PROMPT });
+		useNewWorkspaceModalStore.getState().openModal("project-1");
+		useNewWorkspaceModalStore.getState().closeModal({ resetDraft: false });
+
+		resetNewWorkspaceDraftOnRouteLeave();
+
+		expect(useNewWorkspaceDraftStore.getState().prompt).toBe("");
+		useNewWorkspaceModalStore.getState().openModal("project-2");
+		expect(useNewWorkspaceDraftStore.getState().prompt).toBe("");
 	});
 });
