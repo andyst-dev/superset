@@ -98,6 +98,12 @@ function DashboardLayout() {
 		isCollapsed: isWorkspaceSidebarCollapsed,
 	} = useWorkspaceSidebarStore();
 
+	// Open the new-workspace modal preselected on the current project.
+	const openNewWorkspaceForCurrentProject = () =>
+		openNewWorkspaceModal(
+			currentWorkspace?.projectId ?? currentV2Workspace?.projectId ?? undefined,
+		);
+
 	// Global hotkeys for dashboard
 	useHotkey("OPEN_SETTINGS", () => navigate({ to: "/settings/account" }));
 	useHotkey("SHOW_HOTKEYS", () => navigate({ to: "/settings/keyboard" }));
@@ -108,19 +114,11 @@ function DashboardLayout() {
 			toggleWorkspaceSidebarCollapsed();
 		}
 	});
-	useHotkey("NEW_WORKSPACE", () =>
-		openNewWorkspaceModal(
-			currentWorkspace?.projectId ?? currentV2Workspace?.projectId ?? undefined,
-		),
-	);
+	useHotkey("NEW_WORKSPACE", openNewWorkspaceForCurrentProject);
 	// Quick Create (meta+shift+n) targets the current project, same as the
 	// regular New Workspace hotkey — the registry declares it but no handler
 	// was wired, so it silently did nothing in v2 (#6041).
-	useHotkey("QUICK_CREATE_WORKSPACE", () =>
-		openNewWorkspaceModal(
-			currentWorkspace?.projectId ?? currentV2Workspace?.projectId ?? undefined,
-		),
-	);
+	useHotkey("QUICK_CREATE_WORKSPACE", openNewWorkspaceForCurrentProject);
 
 	const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
