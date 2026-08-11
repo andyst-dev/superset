@@ -411,15 +411,20 @@ export async function login(
 							resolve({ code, redirectUri });
 						});
 					},
-					() => {
+					(error) => {
 						// The loopback flow is the only one offered; surface its
 						// failure instead of leaving the command waiting forever.
+						// Preserve the underlying reason (denial vs timeout vs CSRF)
+						// so the user can tell a suspicious callback apart from a
+						// normal failure.
 						settle(() => {
 							pasteController.abort();
 							reject(
 								new CLIError(
-									"Browser login did not complete",
-									"Run `superset auth login` again, or use --no-browser to sign in via the paste URL.",
+									error instanceof Error
+										? error.message
+										: "Browser login did not complete",
+									"Run `superset auth login` again, or run it in a non-interactive terminal (no browser) to use the paste flow instead.",
 								),
 							);
 						});
