@@ -113,6 +113,14 @@ function DashboardLayout() {
 			currentWorkspace?.projectId ?? currentV2Workspace?.projectId ?? undefined,
 		),
 	);
+	// Quick Create (meta+shift+n) targets the current project, same as the
+	// regular New Workspace hotkey — the registry declares it but no handler
+	// was wired, so it silently did nothing in v2 (#6041).
+	useHotkey("QUICK_CREATE_WORKSPACE", () =>
+		openNewWorkspaceModal(
+			currentWorkspace?.projectId ?? currentV2Workspace?.projectId ?? undefined,
+		),
+	);
 
 	const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
