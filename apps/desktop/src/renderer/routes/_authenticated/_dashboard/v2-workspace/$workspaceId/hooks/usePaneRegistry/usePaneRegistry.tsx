@@ -518,6 +518,7 @@ export function usePaneRegistry({
 						<ChatPane
 							workspaceId={workspaceId}
 							sessionId={data.sessionId}
+							isActive={ctx.isActive}
 							onSessionIdChange={(id) =>
 								ctx.actions.updateData({ ...data, sessionId: id })
 							}

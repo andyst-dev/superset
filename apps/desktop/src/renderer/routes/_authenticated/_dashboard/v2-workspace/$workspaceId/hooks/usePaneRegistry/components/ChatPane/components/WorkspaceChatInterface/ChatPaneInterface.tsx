@@ -195,6 +195,7 @@ export function ChatPaneInterface({
 	organizationId,
 	cwd,
 	isFocused,
+	isActive,
 	getOrCreateSession,
 	onResetSession,
 	onUserMessageSubmitted,
@@ -294,6 +295,7 @@ export function ChatPaneInterface({
 		sessionId,
 		workspaceId,
 		enabled: Boolean(sessionId),
+		isActive,
 	});
 	const {
 		commands,

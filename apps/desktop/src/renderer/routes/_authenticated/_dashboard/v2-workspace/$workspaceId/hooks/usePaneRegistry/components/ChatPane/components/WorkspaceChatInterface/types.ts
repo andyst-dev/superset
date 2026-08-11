@@ -13,6 +13,12 @@ export interface ChatPaneInterfaceProps {
 	organizationId: string | null;
 	cwd: string;
 	isFocused: boolean;
+	/**
+	 * True while this chat pane is the focused/active tab. Gates background
+	 * chat polling so idle/background panes stop refetching the full
+	 * transcript on a timer (#6339).
+	 */
+	isActive?: boolean;
 	getOrCreateSession: () => Promise<string>;
 	onResetSession: () => Promise<void>;
 	onUserMessageSubmitted?: (message: string) => void;

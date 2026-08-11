@@ -9,6 +9,14 @@ interface UseChatDisplayOptions {
 	workspaceId: string;
 	enabled?: boolean;
 	fps?: number;
+	/**
+	 * True while this chat pane is the focused/active tab. Idle panes in the
+	 * background keep polling the full transcript on a timer even when nothing
+	 * is running — that serialize/parse work scales with transcript length and
+	 * adds up across several open panes (#6339). Gate background polling on
+	 * this so hidden panes don't refetch until they become active again.
+	 */
+	isActive?: boolean;
 }
 
 // Retention window for an inactive session's cached snapshot (full message
@@ -117,7 +125,13 @@ function getLegacyImagePayload(
 }
 
 export function useChatDisplay(options: UseChatDisplayOptions) {
-	const { sessionId, workspaceId, enabled = true, fps = 4 } = options;
+	const {
+		sessionId,
+		workspaceId,
+		enabled = true,
+		fps = 4,
+		isActive = true,
+	} = options;
 	const [commandError, setCommandError] = useState<unknown>(null);
 	const queryInput =
 		sessionId === null ? undefined : { sessionId, workspaceId };
@@ -125,8 +139,13 @@ export function useChatDisplay(options: UseChatDisplayOptions) {
 	const refetchIntervalMs = toRefetchIntervalMs(fps);
 	const queryOptions = {
 		enabled: isQueryEnabled && queryInput !== undefined,
-		refetchInterval: refetchIntervalMs,
-		refetchIntervalInBackground: true,
+		// Only poll while this pane is the active tab. Idle/background panes
+		// otherwise refetch the whole transcript on a timer forever, and that
+		// serialize/parse cost scales with conversation length — it adds up
+		// across several open panes and degrades responsiveness (#6339). The
+		// cached snapshot stays mounted, so returning to the pane resumes fresh.
+		refetchInterval: isActive ? refetchIntervalMs : false,
+		refetchIntervalInBackground: isActive,
 		refetchOnWindowFocus: false,
 		gcTime: CHAT_QUERY_GC_TIME_MS,
 	} as const;
