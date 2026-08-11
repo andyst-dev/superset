@@ -56,8 +56,10 @@ export async function getHostJwt(bearer: string): Promise<string> {
 	}
 	const data = (await response.json()) as { token?: unknown };
 	// A 2xx without a usable token must not be cached — sending `Bearer
-	// undefined` later would surface as a misleading relay auth failure.
-	if (typeof data?.token !== "string" || data.token.length === 0) {
+	// undefined` (or a whitespace-only string) later would surface as a
+	// misleading relay auth failure. A malformed 2xx must not poison the cache
+	// for the full 55 minutes, so keep the retry behaviour of other failures.
+	if (typeof data?.token !== "string" || data.token.trim().length === 0) {
 		throw new Error(
 			"Control plane returned a token response without a token value",
 		);

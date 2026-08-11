@@ -100,15 +100,48 @@ describe("getHostJwt", () => {
 
 	it("throws when the token field is not a string", async () => {
 		stubFetch(true, { token: 12345 });
-		await expect(getHostJwt("sk_live_badtoken")).rejects.toThrow(
+		await expect(getHostJwt("«redacted:sk_live_…»")).rejects.toThrow(
 			/without a token value/,
 		);
 	});
 
-	it("passes an abort signal so a stalled fetch cannot hang", async () => {
-		stubFetch(true);
-		await getHostJwt("sk_live_signal");
-		const init = fetchCalls[0]!.init;
-		expect(init?.signal).toBeDefined();
+	it("throws on a whitespace-only token so a malformed 2xx is not cached", async () => {
+		stubFetch(true, { token: "   " });
+		await expect(getHostJwt("«redacted:sk_live_…»")).rejects.toThrow(
+			/without a token value/,
+		);
+		// Not cached: a retry hits the endpoint again instead of reusing the
+		// whitespace token for up to 55 minutes.
+		stubFetch(true, { token: "minted-jwt" });
+		const result = await getHostJwt("«redacted:sk_live_…»");
+		expect(result).toBe("minted-jwt");
+		expect(fetchCalls).toHaveLength(2);
+	});
+
+	it("passes an AbortSignal.timeout so a stalled fetch cannot hang", () => {
+		// Verify the exchange uses AbortSignal.timeout(TOKEN_FETCH_TIMEOUT_MS)
+		// so a stalled control plane aborts instead of hanging the command.
+		// Intercept AbortSignal.timeout to capture the configured duration —
+		// avoids a real 10s wall-clock wait. Use a fresh key so a cached token
+		// from an earlier test can't skip the fetch.
+		let capturedMs: number | undefined;
+		const originalTimeout = AbortSignal.timeout;
+		const timeoutSpy = (ms: number) => {
+			capturedMs = ms;
+			return originalTimeout.call(AbortSignal, ms);
+		};
+		AbortSignal.timeout = timeoutSpy as typeof AbortSignal.timeout;
+		try {
+			stubFetch(true);
+			// Wait for the exchange so the fetch is issued.
+			return getHostJwt("sk_live_signal_test").then(() => {
+				const init = fetchCalls[0]!.init;
+				expect(init?.signal).toBeInstanceOf(AbortSignal);
+				expect(capturedMs).toBeGreaterThan(0);
+				expect(init?.signal).not.toBeUndefined();
+			});
+		} finally {
+			AbortSignal.timeout = originalTimeout;
+		}
 	});
 });
