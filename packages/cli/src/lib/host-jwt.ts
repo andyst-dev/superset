@@ -1,7 +1,9 @@
 import { getApiUrl } from "./config";
 
-const JWT_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const JWT_CACHE_DURATION_MS = 55 * 60 * 1000;
+/** Hard cap on a single token-exchange attempt so a stalled control plane
+ * can't hang a CLI command that targets a remote host. */
+const TOKEN_FETCH_TIMEOUT_MS = 10 * 1000;
 
 function looksLikeJwt(token: string): boolean {
 	const parts = token.split(".");
@@ -38,20 +40,28 @@ const jwtCache = new Map<string, { jwt: string; expiresAt: number }>();
 export async function getHostJwt(bearer: string): Promise<string> {
 	if (looksLikeJwt(bearer)) return bearer;
 	const cached = jwtCache.get(bearer);
-	if (cached && Date.now() < cached.expiresAt - JWT_REFRESH_BUFFER_MS) {
+	if (cached && Date.now() < cached.expiresAt) {
 		return cached.jwt;
 	}
 	const response = await fetch(`${getApiUrl()}/api/auth/token`, {
 		headers: {
 			"x-api-key": bearer,
 		},
+		signal: AbortSignal.timeout(TOKEN_FETCH_TIMEOUT_MS),
 	});
 	if (!response.ok) {
 		throw new Error(
 			`Failed to authenticate API key with the control plane (${response.status})`,
 		);
 	}
-	const data = (await response.json()) as { token: string };
+	const data = (await response.json()) as { token?: unknown };
+	// A 2xx without a usable token must not be cached — sending `Bearer
+	// undefined` later would surface as a misleading relay auth failure.
+	if (typeof data?.token !== "string" || data.token.length === 0) {
+		throw new Error(
+			"Control plane returned a token response without a token value",
+		);
+	}
 	jwtCache.set(bearer, {
 		jwt: data.token,
 		expiresAt: Date.now() + JWT_CACHE_DURATION_MS,

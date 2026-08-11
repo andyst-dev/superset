@@ -85,4 +85,30 @@ describe("getHostJwt", () => {
 			/Failed to authenticate API key/,
 		);
 	});
+
+	it("throws without caching when a 2xx response has no token", async () => {
+		stubFetch(true, {});
+		await expect(getHostJwt("sk_live_notoken")).rejects.toThrow(
+			/without a token value/,
+		);
+		// The bad response must not be cached: a retry hits the endpoint again.
+		stubFetch(true, { token: "minted-jwt" });
+		const result = await getHostJwt("sk_live_notoken");
+		expect(result).toBe("minted-jwt");
+		expect(fetchCalls).toHaveLength(2);
+	});
+
+	it("throws when the token field is not a string", async () => {
+		stubFetch(true, { token: 12345 });
+		await expect(getHostJwt("sk_live_badtoken")).rejects.toThrow(
+			/without a token value/,
+		);
+	});
+
+	it("passes an abort signal so a stalled fetch cannot hang", async () => {
+		stubFetch(true);
+		await getHostJwt("sk_live_signal");
+		const init = fetchCalls[0]!.init;
+		expect(init?.signal).toBeDefined();
+	});
 });
