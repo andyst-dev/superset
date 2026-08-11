@@ -6,6 +6,7 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { DEFAULT_TERMINAL_SCROLLBACK } from "shared/constants";
+import type { LeakedInputModeReclaimer } from "shared/leaked-input-mode-reclaim";
 import {
 	applyTerminalFontFamilyCssVariable,
 	type TerminalAppearance,
@@ -20,6 +21,7 @@ import {
 } from "./parser-idle-gate";
 import { loadAddons } from "./terminal-addons";
 import {
+	hasPersistedBuffer,
 	removeTerminalStatePersistedAt,
 	TERMINAL_BUFFER_KEY_PREFIX,
 	TERMINAL_DIMS_KEY_PREFIX,
@@ -82,6 +84,7 @@ function createTerminal(
 	terminal: XTerm;
 	fitAddon: FitAddon;
 	serializeAddon: SerializeAddon;
+	inputModeReclaimer: LeakedInputModeReclaimer;
 } {
 	const fitAddon = new FitAddon();
 	const serializeAddon = new SerializeAddon();
@@ -109,8 +112,8 @@ function createTerminal(
 	// Disarm TUI-only input modes (kitty keyboard / mouse / focus) leaked into a
 	// live shell prompt by a TUI killed while attached (#4949). The parser
 	// handlers are owned by the terminal and cleaned up on terminal.dispose().
-	installInputModeReclaimer(terminal);
-	return { terminal, fitAddon, serializeAddon };
+	const { reclaimer: inputModeReclaimer } = installInputModeReclaimer(terminal);
+	return { terminal, fitAddon, serializeAddon, inputModeReclaimer };
 }
 
 function persistBuffer(
@@ -118,7 +121,17 @@ function persistBuffer(
 	serializeAddon: SerializeAddon,
 ): boolean {
 	try {
-		const data = serializeAddon.serialize({ scrollback: SERIALIZE_SCROLLBACK });
+		// Exclude terminal modes (DECSET ?1000/?1002/?1003 mouse tracking,
+		// ?1004 focus, kitty keyboard) from the persisted snapshot. A restored
+		// snapshot is scrollback belonging to a session that may well be dead;
+		// replaying its input modes into whatever pty the pane lands on next is
+		// wrong by construction (#6308/#6343). Live mode continuity across a
+		// reattach is handled server-side by the host's `buildPreamble()`, so
+		// stripping modes here does not regress mode replay. Mirrors VSCode.
+		const data = serializeAddon.serialize({
+			scrollback: SERIALIZE_SCROLLBACK,
+			excludeModes: true,
+		});
 		localStorage.setItem(`${STORAGE_KEY_PREFIX}${terminalId}`, data);
 		touchTerminalStatePersistedAt(terminalId);
 		return true;
@@ -304,11 +317,8 @@ export function createRuntime(
 	const cols = savedDims?.cols ?? DEFAULT_COLS;
 	const rows = savedDims?.rows ?? DEFAULT_ROWS;
 
-	const { terminal, fitAddon, serializeAddon } = createTerminal(
-		cols,
-		rows,
-		appearance,
-	);
+	const { terminal, fitAddon, serializeAddon, inputModeReclaimer } =
+		createTerminal(cols, rows, appearance);
 
 	const gate = createParserIdleGate();
 	terminal.write = wrapWrite(gate, terminal.write.bind(terminal));
@@ -329,10 +339,22 @@ export function createRuntime(
 	});
 	let initialContent: TerminalRuntime["initialContent"] = "none";
 	if (options.initialBuffer !== undefined) {
+		if (options.initialBuffer.length > 0) {
+			initialContent = "seeded";
+			// The seed is a sibling's serialize — it may carry input modes the
+			// originating session armed. Those must be reclaimable, not exempted
+			// as shell-init-owned, so tell the reclaimer before the bytes land.
+			inputModeReclaimer.noteRestoreAttach();
+		}
 		terminal.write(options.initialBuffer);
-		if (options.initialBuffer.length > 0) initialContent = "seeded";
-	} else if (restoreBuffer(terminalId, terminal)) {
+	} else if (hasPersistedBuffer(terminalId)) {
 		initialContent = "restored";
+		// Same as seeding: a restored snapshot is scrollback of a possibly-dead
+		// session and may carry its armed input modes. Flag the reclaimer before
+		// the replay writes them, so the next shell-ready marker reclaims them
+		// instead of grandfathering them as shell-owned forever (#6308/#6343).
+		inputModeReclaimer.noteRestoreAttach();
+		restoreBuffer(terminalId, terminal);
 	}
 	if (initialContent !== "none") {
 		// SerializeAddon snapshots bake in whatever input-reporting modes were

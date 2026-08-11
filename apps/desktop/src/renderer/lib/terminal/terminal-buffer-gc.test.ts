@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
 	clearAllTerminalState,
+	hasPersistedBuffer,
 	pruneExpiredTerminalState,
 	reclaimTerminalStateForQuota,
 	removeTerminalStatePersistedAt,
@@ -191,5 +192,27 @@ describe("persisted-at index maintenance", () => {
 		touchTerminalStatePersistedAt("t1", storage, NOW);
 
 		expect(readIndex(values)).toEqual({ t1: NOW });
+	});
+});
+
+describe("hasPersistedBuffer", () => {
+	test("reports true only when a buffer snapshot exists", () => {
+		const { values, storage } = createFakeStorage();
+		expect(hasPersistedBuffer("t1", storage)).toBe(false);
+
+		values.set(`${TERMINAL_BUFFER_KEY_PREFIX}t1`, "scrollback");
+		expect(hasPersistedBuffer("t1", storage)).toBe(true);
+	});
+
+	test("treats an empty snapshot as absent (matches restoreBuffer)", () => {
+		const { values, storage } = createFakeStorage();
+		values.set(`${TERMINAL_BUFFER_KEY_PREFIX}t1`, "");
+		expect(hasPersistedBuffer("t1", storage)).toBe(false);
+	});
+
+	test("ignores a terminal that only has dims persisted", () => {
+		const { values, storage } = createFakeStorage();
+		values.set(`${TERMINAL_DIMS_KEY_PREFIX}t1`, "120x32");
+		expect(hasPersistedBuffer("t1", storage)).toBe(false);
 	});
 });

@@ -33,6 +33,34 @@ describe("createLeakedInputModeReclaimer", () => {
 		expect(r.collectDisarm()).toBe("");
 	});
 
+	it("reclaims modes carried over by a restored attach (#6308/#6343)", () => {
+		const r = createLeakedInputModeReclaimer();
+		// Restore: the persisted snapshot / host preamble re-arms the dead
+		// TUI's mouse mode into a fresh xterm before any shell-ready marker.
+		r.noteRestoreAttach();
+		r.noteArm("mouse", true);
+		// Shell reprompts (Claude is gone) → the leaked mode must be reclaimed.
+		r.noteShellReady();
+		expect(r.collectDisarm()).toContain("\x1b[?1003l");
+	});
+
+	it("reclaims modes already armed before noteRestoreAttach is signalled", () => {
+		const r = createLeakedInputModeReclaimer();
+		r.noteArm("mouse", true); // replay bytes parsed first
+		r.noteRestoreAttach(); // transport then flags the restore
+		r.noteShellReady();
+		expect(r.collectDisarm()).toContain("\x1b[?1003l");
+	});
+
+	it("still keeps live modes on a restored runtime that re-arms before the flush", () => {
+		const r = createLeakedInputModeReclaimer();
+		r.noteRestoreAttach();
+		r.noteArm("mouse", true);
+		r.noteShellReady(); // marks mouse leaked
+		r.noteArm("mouse", true); // a live TUI grabs it before the flush
+		expect(r.collectDisarm()).toBe("");
+	});
+
 	it("suppresses the disarm when a TUI re-arms before collection", () => {
 		const r = createLeakedInputModeReclaimer();
 		r.noteShellReady();

@@ -79,6 +79,15 @@ export interface LeakedInputModeReclaimer {
 	 */
 	noteShellReady(): void;
 	/**
+	 * Mark this runtime as restored/seeded rather than freshly booted. Input
+	 * modes observed before the first shell-ready marker on a restored runtime
+	 * were carried over from a possibly-dead session (a persisted snapshot or
+	 * the host reattach preamble), NOT armed by a fresh shell — so the
+	 * shell-ownership exemption must not apply to them. They stay reclaimable
+	 * at the next marker. Shells never arm these modes, so reclaiming is safe.
+	 */
+	noteRestoreAttach(): void;
+	/**
 	 * Disarm bytes for modes leaked at the last marker and not re-armed since — so
 	 * a live/suspended/racing TUI that owns the foreground keeps its modes.
 	 * Consumes the pending set; returns "" when nothing leaked.
@@ -102,6 +111,10 @@ export function createLeakedInputModeReclaimer(): LeakedInputModeReclaimer {
 		]),
 	);
 	let sawMarker = false;
+	// True once `noteRestoreAttach` runs: this xterm was seeded from a persisted
+	// snapshot / sibling serialize / host reattach preamble rather than a fresh
+	// shell boot, so pre-marker arms are program-sourced, not shell-init-owned.
+	let restoreSourced = false;
 
 	return {
 		noteArm(mode, armed) {
@@ -111,10 +124,21 @@ export function createLeakedInputModeReclaimer(): LeakedInputModeReclaimer {
 			if (armed) {
 				// A re-arm cancels a pending reclaim — the mode is live again.
 				s.pending = false;
-				// Armed before the first marker → shell init owns it.
-				if (!sawMarker) s.shellOwned = true;
+				// Armed before the first marker → shell init owns it. On a
+				// restored/seeded runtime the arms came from the dead session,
+				// not shell init, so they stay reclaimable (#6308/#6343).
+				if (!sawMarker && !restoreSourced) s.shellOwned = true;
 			} else {
 				s.shellOwned = false;
+			}
+		},
+		noteRestoreAttach() {
+			restoreSourced = true;
+			// Any mode that arrived before this point on a restore was the dead
+			// session's — undo the shell-ownership exemption so the next marker
+			// reclaims it instead of grandfathering it forever.
+			for (const s of state.values()) {
+				if (s.armed) s.shellOwned = false;
 			}
 		},
 		noteShellReady() {

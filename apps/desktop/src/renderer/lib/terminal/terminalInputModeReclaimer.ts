@@ -1,5 +1,6 @@
 import {
 	createLeakedInputModeReclaimer,
+	type LeakedInputModeReclaimer,
 	SHELL_READY_MARKER_PAYLOAD,
 	SHELL_READY_OSC_ID,
 } from "@superset/shared/leaked-input-mode-reclaim";
@@ -24,7 +25,14 @@ import type { IDisposable, Terminal } from "@xterm/xterm";
  * keeps its modes. The decision logic lives in the shared module so a host-side
  * surface can reuse it later.
  */
-export function installInputModeReclaimer(terminal: Terminal): IDisposable {
+export interface InputModeReclaimerHandle {
+	reclaimer: LeakedInputModeReclaimer;
+	dispose(): void;
+}
+
+export function installInputModeReclaimer(
+	terminal: Terminal,
+): InputModeReclaimerHandle {
 	const reclaimer = createLeakedInputModeReclaimer();
 	const parser = terminal.parser;
 	const disposables: IDisposable[] = [];
@@ -102,6 +110,7 @@ export function installInputModeReclaimer(terminal: Terminal): IDisposable {
 	);
 
 	return {
+		reclaimer,
 		dispose(): void {
 			disposed = true;
 			for (const d of disposables) d.dispose();

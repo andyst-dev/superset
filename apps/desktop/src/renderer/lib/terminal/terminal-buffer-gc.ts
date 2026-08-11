@@ -52,6 +52,22 @@ export function touchTerminalStatePersistedAt(
 	writeIndex(storage, index);
 }
 
+/** Whether a non-empty persisted buffer snapshot exists for a terminal id. */
+export function hasPersistedBuffer(
+	terminalId: string,
+	storage: Storage = localStorage,
+): boolean {
+	try {
+		// Mirrors `restoreBuffer`'s truthy-write guard: an empty snapshot would
+		// be read back as "no content", so it does not count as a restore.
+		return Boolean(
+			storage.getItem(`${TERMINAL_BUFFER_KEY_PREFIX}${terminalId}`),
+		);
+	} catch {
+		return false;
+	}
+}
+
 export function removeTerminalStatePersistedAt(
 	terminalId: string,
 	storage: Storage = localStorage,
