@@ -391,59 +391,72 @@ export async function login(
 			};
 			signal.addEventListener("abort", onOuterAbort);
 
+			// Drive only the flow whose URL was presented. When the loopback
+			// flow is active, no paste URL was shown, so running the paste prompt
+			// lets an accidental/invalid paste abort a valid browser login and a
+			// browser denial leaves the command waiting indefinitely. When the
+			// paste flow is active, the browser was never opened, so only pasting
+			// can complete it. Either way the code is exchanged with the single
+			// chosen redirect_uri (#6310).
 			if (loopback && useLoopback) {
 				waitForCallback({
 					server: loopback.server,
 					port: loopback.port,
 					expectedState: state,
 					signal: callbackController.signal,
-				})
-					.then((code) => {
+				}).then(
+					(code) => {
 						settle(() => {
 							pasteController.abort();
 							resolve({ code, redirectUri });
 						});
-					})
-					.catch(() => {
-						// Loopback failed (timeout, CSRF, our own cancel). Don't take
-						// down the paste flow — the user can still complete login by
-						// pasting. If paste also fails, that error will surface instead.
-					});
-			}
-
-			// When the loopback flow is active it is the only URL presented; the
-			// paste prompt is a fallback only when the paste URL was shown. Either
-			// way the code is exchanged with the single chosen redirect_uri.
-			callbacks
-				.promptForPastedCode(pasteController.signal)
-				.then((pasted) => {
-					if (pasteController.signal.aborted) return;
-					try {
-						const { code, state: returnedState } = parsePastedCode(pasted);
-						if (returnedState !== state) {
-							throw new CLIError(
-								"State mismatch",
-								"The pasted code does not match this login attempt. Run `superset auth login` again.",
-							);
-						}
+					},
+					() => {
+						// The loopback flow is the only one offered; surface its
+						// failure instead of leaving the command waiting forever.
 						settle(() => {
-							callbackController.abort();
-							resolve({ code, redirectUri });
+							pasteController.abort();
+							reject(
+								new CLIError(
+									"Browser login did not complete",
+									"Run `superset auth login` again, or use --no-browser to sign in via the paste URL.",
+								),
+							);
 						});
-					} catch (err) {
+					},
+				);
+			} else {
+				callbacks
+					.promptForPastedCode(pasteController.signal)
+					.then((pasted) => {
+						if (pasteController.signal.aborted) return;
+						try {
+							const { code, state: returnedState } = parsePastedCode(pasted);
+							if (returnedState !== state) {
+								throw new CLIError(
+									"State mismatch",
+									"The pasted code does not match this login attempt. Run `superset auth login` again.",
+								);
+							}
+							settle(() => {
+								callbackController.abort();
+								resolve({ code, redirectUri });
+							});
+						} catch (err) {
+							settle(() => {
+								callbackController.abort();
+								reject(err);
+							});
+						}
+					})
+					.catch((err) => {
+						if (pasteController.signal.aborted) return;
 						settle(() => {
 							callbackController.abort();
 							reject(err);
 						});
-					}
-				})
-				.catch((err) => {
-					if (pasteController.signal.aborted) return;
-					settle(() => {
-						callbackController.abort();
-						reject(err);
 					});
-				});
+			}
 		});
 
 		return await exchangeCodeForToken({

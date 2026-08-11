@@ -115,7 +115,7 @@ export function ConsentForm({
 					{ accept, data },
 				);
 				setError(
-					"Could not complete authorization. Please close this window and run superset auth login again.",
+					"Could not complete authorization. Please close this window and restart authorization from the application.",
 				);
 				setIsLoading(false);
 			}

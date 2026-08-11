@@ -14,6 +14,10 @@ describe("login /authorize (single request)", () => {
 		const printed: string[] = [];
 
 		const controller = new AbortController();
+		let notifyAuthUrl!: () => void;
+		const authUrlEmitted = new Promise<void>((resolve) => {
+			notifyAuthUrl = resolve;
+		});
 		const loginPromise = login(controller.signal, {
 			// A loopback port is "bound" — but we never let the fake server
 			// actually receive a code; the test only asserts on the URL(s).
@@ -27,12 +31,14 @@ describe("login /authorize (single request)", () => {
 			},
 			onAuthorizationUrl: (url) => {
 				printed.push(url);
+				notifyAuthUrl();
 			},
-			// Never resolve: we only assert on the URLs emitted up front.
+			// Not reached in the loopback path, but keep it a never-resolving
+			// stub so the login promise stays pending if it is mis-reached.
 			promptForPastedCode: () => new Promise<string>(() => {}),
 		});
 
-		await new Promise((r) => setTimeout(r, 20));
+		await authUrlEmitted;
 
 		expect(printed).toHaveLength(1);
 		expect(opened).toEqual(printed);
@@ -52,6 +58,10 @@ describe("login /authorize (single request)", () => {
 		const printed: string[] = [];
 
 		const controller = new AbortController();
+		let notifyAuthUrl!: () => void;
+		const authUrlEmitted = new Promise<void>((resolve) => {
+			notifyAuthUrl = resolve;
+		});
 		const loginPromise = login(controller.signal, {
 			bindLoopbackServer: async () => null, // no port bound
 			shouldOpenBrowser: () => true,
@@ -60,11 +70,12 @@ describe("login /authorize (single request)", () => {
 			},
 			onAuthorizationUrl: (url) => {
 				printed.push(url);
+				notifyAuthUrl();
 			},
 			promptForPastedCode: () => new Promise<string>(() => {}),
 		});
 
-		await new Promise((r) => setTimeout(r, 20));
+		await authUrlEmitted;
 
 		expect(printed).toHaveLength(1);
 		expect(opened).toHaveLength(0);
