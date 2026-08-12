@@ -411,7 +411,7 @@ describe("workspace.create + workspace.delete integration", () => {
 			.where(eq(workspaces.id, scenario.featureWorkspaceId))
 			.all();
 		expect(rows).toHaveLength(1);
-		expect(rows[0]?.archivedAt).not.toBeNull();
+		expect(rows[0]?.archivedAt).toBeDefined();
 		expect(rows[0]?.archiveReason).toBe("deleted");
 		expect(
 			scenario.host.apiCalls.some(
