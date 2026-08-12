@@ -26,6 +26,7 @@ const NO_TOKEN_KEY = SK_LIVE + "no_token";
 const TYPED_KEY = SK_LIVE + "typed";
 const WHITESPACE_KEY = SK_LIVE + "whitespace";
 const ABORT_KEY = SK_LIVE + "abort";
+const BOUNDARY_KEY = SK_LIVE + "boundary";
 
 const realFetch = globalThis.fetch;
 let fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
@@ -160,6 +161,36 @@ describe("getHostJwt", () => {
 			});
 		} finally {
 			AbortSignal.timeout = originalTimeout;
+		}
+	});
+
+	it("reuses the cached JWT for the full 55-minute window, then re-mints", async () => {
+		// The cache must serve the minted token for the full JWT_CACHE_DURATION_MS
+		// (55 min) with no second expiry buffer subtracted, then re-mint on the
+		// first call past the boundary. Mock Date.now so no real-time wait is
+		// needed (#6346 review).
+		stubFetch(true);
+		const originalNow = Date.now;
+		const start = 1_000_000_000_000;
+		let now = start;
+		Date.now = () => now;
+		try {
+			await getHostJwt(BOUNDARY_KEY);
+			expect(fetchCalls).toHaveLength(1);
+
+			// Inside the 55-minute window: cached, no second fetch.
+			now = start + 54 * 60 * 1000;
+			const within = await getHostJwt(BOUNDARY_KEY);
+			expect(within).toBe("minted-jwt");
+			expect(fetchCalls).toHaveLength(1);
+
+			// Just past 55 minutes: expires, so the next call re-mints.
+			now = start + 55 * 60 * 1000 + 1;
+			const past = await getHostJwt(BOUNDARY_KEY);
+			expect(past).toBe("minted-jwt");
+			expect(fetchCalls).toHaveLength(2);
+		} finally {
+			Date.now = originalNow;
 		}
 	});
 });
