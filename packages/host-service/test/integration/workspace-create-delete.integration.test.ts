@@ -420,6 +420,50 @@ describe("workspace.create + workspace.delete integration", () => {
 		).toBe(true);
 	});
 
+	test("create() does not reuse an archived (tombstoned) workspace on the same branch", async () => {
+		// Regress #6383: since deletes archive rows instead of removing them,
+		// a create-after-delete on the same branch must NOT match the
+		// tombstone by (projectId, branch) — otherwise it returns a dead
+		// workspace whose worktree is gone, reports alreadyExists, and skips
+		// creating the worktree.
+		const scenario = await createFeatureWorktreeScenario({
+			hostOptions: { apiOverrides: cloudFlows.workspaceDeleteOk() },
+		});
+		dispose = scenario.dispose;
+
+		// Delete the first workspace, archiving its row.
+		await scenario.host.trpc.workspace.delete.mutate({
+			id: scenario.featureWorkspaceId,
+		});
+		const archived = scenario.host.db
+			.select()
+			.from(workspaces)
+			.where(eq(workspaces.id, scenario.featureWorkspaceId))
+			.get();
+		expect(archived?.archivedAt).not.toBeNull();
+
+		// Create again on the exact same branch: must create a fresh row and
+		// not "reuse" the archived workspace.
+		const result = await scenario.host.trpc.workspaces.create.mutate({
+			projectId: scenario.projectId,
+			name: "repro-2",
+			branch: scenario.branch,
+		});
+		expect(result.alreadyExists).toBe(false);
+		expect(result.workspace?.id).not.toBe(scenario.featureWorkspaceId);
+		expect(result.workspace?.branch).toBe(scenario.branch);
+
+		// The new row is active (not archived) and has its own worktreePath.
+		const fresh = scenario.host.db
+			.select()
+			.from(workspaces)
+			.where(eq(workspaces.id, result.workspace?.id ?? ""))
+			.get();
+		expect(fresh?.archivedAt).toBeNull();
+		expect(fresh?.worktreePath).toBeDefined();
+		expect(fresh?.worktreePath).not.toBe(archived?.worktreePath);
+	});
+
 	test("delete() requires authentication", async () => {
 		const scenario = await createBasicScenario();
 		dispose = scenario.dispose;

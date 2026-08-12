@@ -5,7 +5,7 @@ import {
 	sanitizeUserBranchName,
 } from "@superset/shared/workspace-launch";
 import { TRPCError } from "@trpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { projects, workspaces } from "../../../db/schema";
 import { createGitEnvResolver } from "../../../runtime/git";
@@ -163,6 +163,10 @@ function findExistingWorkspaceByBranch(
 			where: and(
 				eq(workspaces.projectId, projectId),
 				eq(workspaces.branch, branch),
+				// Exclude tombstoned (archived) rows: since deletes archive
+				// instead of removing, a create after delete must not "reuse"
+				// a dead workspace whose worktreePath is gone (#6383).
+				isNull(workspaces.archivedAt),
 			),
 		})
 		.sync();
