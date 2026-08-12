@@ -3,11 +3,25 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 // The minted-JWT cache is module-level and shared across tests in this file;
 // reset it by importing fresh in each test is not enough (Bun caches modules),
 // so we drive assertions via fetch call counts instead of the cache internals.
+// Every test uses a DISTINCT fake key so a JWT cached by an earlier test can't
+// short-circuit the fetch this test is asserting on.
 mock.module("./config", () => ({
 	getApiUrl: () => "https://api.example.com",
 }));
 
 const { getHostJwt } = await import("./host-jwt");
+
+// Fake, obviously-non-secret API keys used only to exercise the exchange path.
+const LIVE_API_KEY = "sk_live_4f9e3a2b1c";
+const TEST_API_KEY = "sk_test_xyz";
+const CACHE_KEY = "sk_live_cache";
+const SHARE_KEY_A = "sk_live_key_a";
+const SHARE_KEY_B = "sk_live_key_b";
+const FAIL_KEY = "sk_live_fail";
+const NO_TOKEN_KEY = "sk_live_no_token";
+const TYPED_KEY = "sk_live_typed";
+const WHITESPACE_KEY = "sk_live_whitespace";
+const ABORT_KEY = "sk_live_abort";
 
 const realFetch = globalThis.fetch;
 let fetchCalls: Array<{ url: string; init?: RequestInit }> = [];
@@ -39,7 +53,7 @@ function apiKeyHeaderOf(url: string): string | undefined {
 
 describe("getHostJwt", () => {
 	it("passes an OAuth JWT through without an exchange", async () => {
-		const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.signature";
+		const jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIn0.sig";
 		const result = await getHostJwt(jwt);
 		expect(result).toBe(jwt);
 		expect(fetchCalls).toHaveLength(0);
@@ -47,73 +61,73 @@ describe("getHostJwt", () => {
 
 	it("exchanges an sk_live_ API key for a JWT via x-api-key", async () => {
 		stubFetch(true);
-		const result = await getHostJwt("sk_live_abc123");
+		const result = await getHostJwt(LIVE_API_KEY);
 		expect(result).toBe("minted-jwt");
 		expect(fetchCalls).toHaveLength(1);
 		const url = fetchCalls[0]!.url;
 		expect(url).toBe("https://api.example.com/api/auth/token");
-		expect(apiKeyHeaderOf(url)).toBe("sk_live_abc123");
+		expect(apiKeyHeaderOf(url)).toBe(LIVE_API_KEY);
 	});
 
 	it("exchanges an sk_test_ API key the same way", async () => {
 		stubFetch(true);
-		const result = await getHostJwt("sk_test_xyz");
+		const result = await getHostJwt(TEST_API_KEY);
 		expect(result).toBe("minted-jwt");
 		expect(fetchCalls).toHaveLength(1);
 		const url = fetchCalls[0]!.url;
 		expect(url).toContain("/api/auth/token");
-		expect(apiKeyHeaderOf(url)).toBe("sk_test_xyz");
+		expect(apiKeyHeaderOf(url)).toBe(TEST_API_KEY);
 	});
 
 	it("caches the minted JWT per key and reuses it", async () => {
 		stubFetch(true);
-		await getHostJwt("sk_live_cache1");
-		await getHostJwt("sk_live_cache1");
+		await getHostJwt(CACHE_KEY);
+		await getHostJwt(CACHE_KEY);
 		expect(fetchCalls).toHaveLength(1);
 	});
 
 	it("does not share a minted JWT across different keys", async () => {
 		stubFetch(true);
-		await getHostJwt("sk_live_keyA");
-		await getHostJwt("sk_live_keyB");
+		await getHostJwt(SHARE_KEY_A);
+		await getHostJwt(SHARE_KEY_B);
 		expect(fetchCalls).toHaveLength(2);
 	});
 
 	it("throws when the exchange fails", async () => {
 		stubFetch(false);
-		await expect(getHostJwt("sk_live_fail")).rejects.toThrow(
+		await expect(getHostJwt(FAIL_KEY)).rejects.toThrow(
 			/Failed to authenticate API key/,
 		);
 	});
 
 	it("throws without caching when a 2xx response has no token", async () => {
 		stubFetch(true, {});
-		await expect(getHostJwt("sk_live_notoken")).rejects.toThrow(
+		await expect(getHostJwt(NO_TOKEN_KEY)).rejects.toThrow(
 			/without a token value/,
 		);
 		// The bad response must not be cached: a retry hits the endpoint again.
 		stubFetch(true, { token: "minted-jwt" });
-		const result = await getHostJwt("sk_live_notoken");
+		const result = await getHostJwt(NO_TOKEN_KEY);
 		expect(result).toBe("minted-jwt");
 		expect(fetchCalls).toHaveLength(2);
 	});
 
 	it("throws when the token field is not a string", async () => {
 		stubFetch(true, { token: 12345 });
-		await expect(getHostJwt("«redacted:sk_live_…»")).rejects.toThrow(
+		await expect(getHostJwt(TYPED_KEY)).rejects.toThrow(
 			/without a token value/,
 		);
 	});
 
 	it("throws on a whitespace-only token so a malformed 2xx is not cached", async () => {
 		stubFetch(true, { token: "   " });
-		await expect(getHostJwt("«redacted:sk_live_…»")).rejects.toThrow(
+		await expect(getHostJwt(WHITESPACE_KEY)).rejects.toThrow(
 			/without a token value/,
 		);
 		// Not cached: a retry hits the endpoint again instead of reusing the
 		// whitespace token for up to 55 minutes.
 		stubFetch(true, { token: "minted-jwt" });
-		const result = await getHostJwt("«redacted:sk_live_…»");
+		const result = await getHostJwt(WHITESPACE_KEY);
 		expect(result).toBe("minted-jwt");
 		expect(fetchCalls).toHaveLength(2);
 	});
@@ -134,7 +148,7 @@ describe("getHostJwt", () => {
 		try {
 			stubFetch(true);
 			// Wait for the exchange so the fetch is issued.
-			return getHostJwt("sk_live_signal_test").then(() => {
+			return getHostJwt(ABORT_KEY).then(() => {
 				const init = fetchCalls[0]!.init;
 				expect(init?.signal).toBeInstanceOf(AbortSignal);
 				expect(capturedMs).toBeGreaterThan(0);
