@@ -11,6 +11,7 @@ import {
 	useProviderAttachments,
 } from "@superset/ui/ai-elements/prompt-input";
 import { Button } from "@superset/ui/button";
+import { Input } from "@superset/ui/input";
 import { isEnterSubmit } from "@superset/ui/lib/keyboard";
 import { toast } from "@superset/ui/sonner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@superset/ui/tooltip";
@@ -574,6 +575,22 @@ export function NewWorkspaceScreen({
 				</h1>
 			</div>
 			<div className="relative flex w-full max-w-[640px] flex-col px-6 pb-8">
+				<Input
+					className="mb-2 h-10 w-full border-border bg-foreground/[0.02] text-sm font-medium placeholder:text-muted-foreground/50 focus-visible:ring-0"
+					placeholder="Workspace name (optional)"
+					value={draft.workspaceName}
+					onChange={(e) =>
+						updateDraft({
+							workspaceName: e.target.value,
+							workspaceNameEdited: true,
+						})
+					}
+					onBlur={() => {
+						if (!draft.workspaceName.trim())
+							updateDraft({ workspaceName: "", workspaceNameEdited: false });
+					}}
+					aria-label="Workspace name"
+				/>
 				<AnimatePresence initial={false}>
 					{isPromptEmpty && (
 						<motion.div
