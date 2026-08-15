@@ -9,12 +9,13 @@ interface ResolvedNames {
 }
 
 /**
- * Returns whatever the user typed; null otherwise. The host-service
- * seeds the branch from a typed name, otherwise creates with a friendly
- * random and applies AI names as a deferred rename.
+ * Returns the user-typed names; null otherwise. An explicitly seeded or
+ * edited branch wins; otherwise a manually entered workspace name is also
+ * sent as the branch candidate so the host does not truncate or reinterpret
+ * it through its generated-name path.
  */
 export function resolveNames(draft: DashboardNewWorkspaceDraft): ResolvedNames {
-	const branchName =
+	const explicitBranchName =
 		draft.branchNameEdited && draft.branchName.trim()
 			? sanitizeUserBranchName(draft.branchName.trim())
 			: null;
@@ -23,6 +24,9 @@ export function resolveNames(draft: DashboardNewWorkspaceDraft): ResolvedNames {
 		draft.workspaceNameEdited && draft.workspaceName.trim()
 			? draft.workspaceName.trim()
 			: null;
+	const branchName =
+		explicitBranchName ??
+		(workspaceName ? sanitizeUserBranchName(workspaceName) : null);
 
 	return { branchName, workspaceName };
 }

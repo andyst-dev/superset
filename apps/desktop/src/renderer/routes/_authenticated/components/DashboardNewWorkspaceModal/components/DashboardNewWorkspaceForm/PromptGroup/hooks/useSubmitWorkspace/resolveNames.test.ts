@@ -37,6 +37,17 @@ describe("resolveNames", () => {
 			draft({ workspaceName: "my-remix", workspaceNameEdited: true }),
 		);
 		expect(names.workspaceName).toBe("my-remix");
+		expect(names.branchName).toBe("my-remix");
+	});
+
+	test("sanitizes a typed workspace name as the branch candidate", () => {
+		const names = resolveNames(
+			draft({
+				workspaceName: "feature/cache-fix",
+				workspaceNameEdited: true,
+			}),
+		);
+		expect(names.branchName).toBe("feature/cache-fix");
 	});
 
 	test("ignores a workspace name that was not edited (e.g. AI-suggested)", () => {
