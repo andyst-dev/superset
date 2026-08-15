@@ -26,7 +26,7 @@ export function resolveNames(draft: DashboardNewWorkspaceDraft): ResolvedNames {
 			: null;
 	const branchName =
 		explicitBranchName ??
-		(workspaceName ? sanitizeUserBranchName(workspaceName) : null);
+		(workspaceName ? sanitizeUserBranchName(workspaceName) || null : null);
 
 	return { branchName, workspaceName };
 }

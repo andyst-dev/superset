@@ -43,16 +43,25 @@ describe("resolveNames", () => {
 	test("sanitizes a typed workspace name as the branch candidate", () => {
 		const names = resolveNames(
 			draft({
-				workspaceName: "feature/cache-fix",
+				workspaceName: "feature:cache-fix",
 				workspaceNameEdited: true,
 			}),
 		);
-		expect(names.branchName).toBe("feature/cache-fix");
+		expect(names.branchName).toBe("featurecache-fix");
+	});
+
+	test("rejects a workspace name that sanitizes to an empty branch", () => {
+		const names = resolveNames(
+			draft({ workspaceName: ":", workspaceNameEdited: true }),
+		);
+		expect(names.workspaceName).toBe(":");
+		expect(names.branchName).toBeNull();
 	});
 
 	test("ignores a workspace name that was not edited (e.g. AI-suggested)", () => {
 		const names = resolveNames(draft({ workspaceName: "suggested" }));
 		expect(names.workspaceName).toBeNull();
+		expect(names.branchName).toBeNull();
 	});
 
 	test("returns a sanitized typed branch name (preserves spaces)", () => {
