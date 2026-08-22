@@ -561,8 +561,7 @@ async function runDestroyPhases(
 					try {
 						await rm(local.worktreePath, { recursive: true, force: true });
 					} catch (err) {
-						const message =
-							err instanceof Error ? err.message : String(err);
+						const message = err instanceof Error ? err.message : String(err);
 						throw new TRPCError({
 							code: "INTERNAL_SERVER_ERROR",
 							message: `Failed to remove orphaned worktree at ${local.worktreePath}: ${message}`,
