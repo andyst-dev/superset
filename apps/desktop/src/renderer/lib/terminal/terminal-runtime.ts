@@ -100,7 +100,7 @@ function createTerminal(
 		theme: appearance.theme,
 		allowProposedApi: true,
 		scrollback: DEFAULT_TERMINAL_SCROLLBACK,
-		macOptionIsMeta: false,
+		macOptionIsMeta: appearance.macOptionIsMeta,
 		macOptionClickForcesSelection: true,
 		cursorStyle: appearance.cursorStyle,
 		cursorInactiveStyle: "outline",
@@ -468,6 +468,7 @@ export function updateRuntimeAppearance(
 	terminal.options.minimumContrastRatio = appearance.minimumContrastRatio;
 	terminal.options.cursorStyle = appearance.cursorStyle;
 	terminal.options.cursorBlink = appearance.cursorBlink;
+	terminal.options.macOptionIsMeta = appearance.macOptionIsMeta;
 	if (!measurementsChanged) {
 		terminal.refresh(0, Math.max(0, terminal.rows - 1));
 	}
