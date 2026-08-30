@@ -567,9 +567,9 @@ async function runDestroyPhases(
 							message: `Failed to remove orphaned worktree at ${local.worktreePath}: ${message}`,
 						});
 					}
+					worktreeRemoved = true;
 				}
 			}
-			worktreeRemoved = true;
 		}
 	}
 

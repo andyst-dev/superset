@@ -543,6 +543,51 @@ describe("workspaceCleanup.destroy cleanup ordering", () => {
 		}
 	});
 
+	test("orphaned worktree outside the managed root is skipped with worktreeRemoved=false", async () => {
+		// Regression for reviewer #6753: when the root guard skips orphaned
+		// removal, `worktreeRemoved` must stay false — the folder was NOT
+		// removed, so reporting it removed would be a lie in the response.
+		const base = mkdtempSync(join(tmpdir(), "worktree-base-"));
+		const repo = mkdtempSync(join(tmpdir(), "workspace-delete-repo-"));
+		// Worktree sits OUTSIDE <base>/<projectId>/ so the guard skips removal.
+		const safePath = mkdtempSync(join(tmpdir(), "worktree-outside-root-"));
+		const worktree = join(safePath, "ws-1");
+		mkdirSync(worktree, { recursive: true });
+		try {
+			const ctx = makeCtx({
+				workspace: {
+					id: "ws-1",
+					projectId: "p-1",
+					worktreePath: worktree,
+					branch: "feature",
+				},
+				project: { id: "p-1", repoPath: repo, worktreeBaseDir: base },
+				hostWorktreeBaseDir: base,
+				// git says no longer registered, but the folder exists on disk —
+				// and it is outside the managed root, so the direct rm is skipped.
+				removeWorktree: async () => ({ stillRegistered: false }),
+			});
+			const caller = workspaceCleanupRouter.createCaller(ctx);
+
+			const result = await caller.destroy({
+				workspaceId: "ws-1",
+				deleteBranch: false,
+				force: true,
+			});
+			// Folder survives (guard skipped the direct rm)...
+			expect(existsSync(worktree)).toBe(true);
+			// ...and we must NOT claim it was removed.
+			expect(result.worktreeRemoved).toBe(false);
+			// The skip is surfaced as a warning, not silent.
+			expect(
+				result.warnings.some((w: string) => w.includes("Skipped orphaned")),
+			).toBe(true);
+		} finally {
+			rmSync(base, { recursive: true, force: true });
+			rmSync(repo, { recursive: true, force: true });
+		}
+	});
+
 	test("missing project metadata warns but still deletes local state", async () => {
 		const tmp = mkdtempSync(join(tmpdir(), "workspace-delete-"));
 		try {
