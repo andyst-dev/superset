@@ -31,6 +31,15 @@ export default command({
 					"Cloud sandboxes are not hosted on one of your machines",
 				);
 			}
+			if (options["delete-branch"] === true) {
+				// `cloudWorkspace.delete` has no branch-deletion contract, so the
+				// flag would be accepted and silently ignored — the command would
+				// report success without releasing anything.
+				throw new CLIError(
+					"--delete-branch cannot be combined with --cloud",
+					"Cloud sandboxes have no workspace git branch to release",
+				);
+			}
 			const deleted: string[] = [];
 			const missing: string[] = [];
 			for (const id of ids) {
