@@ -1,18 +1,15 @@
 import { boolean, CLIError, positional, string } from "@superset/cli-framework";
-import { getHostId } from "@superset/shared/host-info";
+import { resolveWorkspaceHost } from "../../../lib/cloud-workspaces";
 import { command } from "../../../lib/command";
-import { resolveHostFilter, resolveHostTarget } from "../../../lib/host-target";
+import { resolveHostTarget } from "../../../lib/host-target";
 
 export default command({
 	description:
-		"Delete workspaces by ID on a host (default: this machine), or cloud sandboxes with --cloud",
+		"Delete workspaces by ID: cloud workspaces by default if your account has them (tearing down the sandbox stops its billing), else on this machine; --local or --host picks a host",
 	args: [positional("ids").required().variadic().desc("Workspace IDs")],
 	options: {
 		host: string().desc("Host the workspaces live on"),
-		local: boolean().desc("Target this machine (the default)"),
-		cloud: boolean().desc(
-			"Delete cloud sandboxes — tears down the sandbox, which is what stops it billing",
-		),
+		local: boolean().desc("The workspaces are on this machine"),
 		"delete-branch": boolean().desc(
 			"Delete the workspace's git branch after delete (default: the branch is kept, matching the desktop UI)",
 		),
@@ -24,19 +21,18 @@ export default command({
 			throw new CLIError("No active organization", "Run: superset auth login");
 		}
 
-		if (options.cloud) {
-			if (options.host !== undefined || options.local) {
-				throw new CLIError(
-					"--cloud cannot be combined with --host or --local",
-					"Cloud sandboxes are not hosted on one of your machines",
-				);
-			}
+		const hostId = await resolveWorkspaceHost(
+			{ host: options.host, local: options.local },
+			ctx.api,
+			organizationId,
+		);
+		if (!hostId) {
 			if (options["delete-branch"] === true) {
 				// `cloudWorkspace.delete` has no branch-deletion contract, so the
 				// flag would be accepted and silently ignored — the command would
 				// report success without releasing anything.
 				throw new CLIError(
-					"--delete-branch cannot be combined with --cloud",
+					"--delete-branch cannot be used with cloud workspaces",
 					"Cloud sandboxes have no workspace git branch to release",
 				);
 			}
@@ -59,11 +55,6 @@ export default command({
 			};
 		}
 
-		const hostId =
-			resolveHostFilter({
-				host: options.host ?? undefined,
-				local: options.local ?? undefined,
-			}) ?? getHostId();
 		const target = await resolveHostTarget({
 			requestedHostId: hostId,
 			organizationId,
