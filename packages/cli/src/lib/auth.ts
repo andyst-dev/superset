@@ -325,6 +325,14 @@ export async function login(
 	const state = generateState();
 
 	const loopback = await (callbacks.bindLoopbackServer ?? bindLoopbackServer)();
+
+	// Honour a cancellation that landed while the port was being bound, before
+	// anything is published or opened.
+	if (signal.aborted) {
+		loopback?.server.close();
+		throw new CLIError("Login cancelled");
+	}
+
 	const loopbackRedirectUri = loopback
 		? `http://127.0.0.1:${loopback.port}/callback`
 		: null;
@@ -345,12 +353,11 @@ export async function login(
 	callbacks.onAuthorizationUrl?.(authorizeUrl);
 
 	if (useLoopback) {
-		void openBrowserImpl(authorizeUrl);
-	}
-
-	if (signal.aborted) {
-		loopback?.server.close();
-		throw new CLIError("Login cancelled");
+		// Opening the browser is best-effort. If the launcher rejects, the
+		// loopback wait still surfaces its own failure (denial, timeout, CSRF),
+		// so swallow it here rather than let a `void` call raise an unhandled
+		// rejection.
+		void openBrowserImpl(authorizeUrl).catch(() => {});
 	}
 
 	const callbackController = new AbortController();

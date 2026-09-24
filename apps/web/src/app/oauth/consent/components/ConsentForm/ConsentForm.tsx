@@ -141,7 +141,10 @@ export function ConsentForm({
 					{ accept, data },
 				);
 				setError(
-					"Could not complete authorization. Please close this window and restart authorization from the application.",
+					t({
+						message:
+							"Could not complete authorization. Please close this window and restart authorization from the application.",
+					}),
 				);
 				setIsLoading(false);
 			}

@@ -53,6 +53,66 @@ describe("login /authorize (single request)", () => {
 		await loginPromise.catch(() => {});
 	});
 
+	test("honours a cancellation raised while the loopback port is being bound", async () => {
+		const printed: string[] = [];
+		const opened: string[] = [];
+
+		const controller = new AbortController();
+		const loginPromise = login(controller.signal, {
+			// The port binds, but the signal lands while it does: nothing may be
+			// published or opened for a login that is already cancelled.
+			bindLoopbackServer: async () => {
+				controller.abort();
+				return { server: { close: () => {} } as never, port: 51789 };
+			},
+			shouldOpenBrowser: () => true,
+			openBrowser: async (url) => {
+				opened.push(url);
+			},
+			onAuthorizationUrl: (url) => {
+				printed.push(url);
+			},
+			promptForPastedCode: () => new Promise<string>(() => {}),
+		});
+
+		await expect(loginPromise).rejects.toThrow("Login cancelled");
+		expect(printed).toHaveLength(0);
+		expect(opened).toHaveLength(0);
+	});
+
+	test("keeps the login alive when the browser launcher rejects", async () => {
+		const printed: string[] = [];
+
+		const controller = new AbortController();
+		let notifyAuthUrl!: () => void;
+		const authUrlEmitted = new Promise<void>((resolve) => {
+			notifyAuthUrl = resolve;
+		});
+		const loginPromise = login(controller.signal, {
+			bindLoopbackServer: async () => ({
+				server: { close: () => {} } as never,
+				port: 51789,
+			}),
+			shouldOpenBrowser: () => true,
+			openBrowser: async () => {
+				throw new Error("no launcher");
+			},
+			onAuthorizationUrl: (url) => {
+				printed.push(url);
+				notifyAuthUrl();
+			},
+			promptForPastedCode: () => new Promise<string>(() => {}),
+		});
+
+		// The URL is still presented and the flow keeps waiting for the
+		// callback: a launcher that cannot start must not abort the login.
+		await authUrlEmitted;
+		expect(printed).toHaveLength(1);
+
+		controller.abort();
+		await loginPromise.catch(() => {});
+	});
+
 	test("prints the paste URL and opens nothing when loopback is unavailable", async () => {
 		const opened: string[] = [];
 		const printed: string[] = [];
