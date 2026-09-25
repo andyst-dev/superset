@@ -245,6 +245,14 @@ export function TipTapMarkdownRenderer({
 		</div>
 	);
 
+	// Radix's trigger calls preventDefault on the contextmenu event, which stops
+	// Chromium emitting the webContents event that attachEditContextMenu uses to
+	// build the native edit menu. Wrapping an editable view would trade its
+	// Paste/Cut/Undo and spellcheck for this menu's copy actions.
+	if (editable) {
+		return content;
+	}
+
 	return (
 		<SelectionContextMenu
 			getMarkdownSelection={() =>
