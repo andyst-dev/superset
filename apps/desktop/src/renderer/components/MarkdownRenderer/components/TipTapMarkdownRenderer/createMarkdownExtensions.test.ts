@@ -171,6 +171,40 @@ describe("math", () => {
 		);
 	});
 
+	it("leaves a currency range alone", () => {
+		const editor = createEditor("Costs $5-$10 today.");
+		try {
+			expect(mathNodes(editor)).toEqual([]);
+		} finally {
+			editor.destroy();
+		}
+		expect(roundTrip("Costs $5-$10 today.")).toBe("Costs $5-$10 today.");
+	});
+
+	it("keeps the text after a same-line display delimiter", () => {
+		const editor = createEditor("$$x$$ and text");
+		try {
+			expect(editor.state.doc.textContent).toContain("and text");
+		} finally {
+			editor.destroy();
+		}
+		expect(roundTrip("$$x$$ and text")).toBe("$$x$$ and text");
+	});
+
+	it("keeps the text after a later-line display delimiter", () => {
+		const markdown = "$$\nx\n$$ and text";
+		const editor = createEditor(markdown);
+		try {
+			expect(mathNodes(editor)).toEqual([]);
+		} finally {
+			editor.destroy();
+		}
+		// The trailing words used to be consumed with the closing line. Soft
+		// breaks in a paragraph collapse to spaces on the way out, so the pin
+		// is that the words survive, not the exact bytes.
+		expect(roundTrip(markdown)).toBe("$$ x $$ and text");
+	});
+
 	it("mounts the math node views instead of the raw delimiters", () => {
 		// KaTeX's own rendering is left to the extension, whose node views
 		// depend on happy-dom globals another test file may have registered
