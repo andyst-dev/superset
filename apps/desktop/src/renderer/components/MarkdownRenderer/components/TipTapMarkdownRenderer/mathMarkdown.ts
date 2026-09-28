@@ -50,14 +50,16 @@ interface MarkdownIt {
 
 /**
  * KaTeX ignores a math span whose content starts or ends with whitespace, and
- * `$5` is a price rather than math. Mirrored here so markdown-it gates on the
- * same reading of the delimiters.
+ * `$5` is a price rather than math. A price range reads the same way: `$5-$10`
+ * hands the rule `5-`, the first half of the range, so a numeric span ending in
+ * a dash is not math either. Mirrored here so markdown-it gates on the same
+ * reading of the delimiters.
  */
 function isMathContent(latex: string): boolean {
 	if (latex.length === 0 || /^\s/.test(latex) || /\s$/.test(latex)) {
 		return false;
 	}
-	return !/^\d+$/.test(latex);
+	return !/^\d+$/.test(latex) && !/^[\d.,]+[-–—]$/.test(latex);
 }
 
 function closingDelimiter(src: string, from: number): number {
@@ -67,6 +69,20 @@ function closingDelimiter(src: string, from: number): number {
 		}
 	}
 	return -1;
+}
+
+/**
+ * A display block closes on `$$` only when nothing but whitespace follows it on
+ * that line. A `$$` with text after it is not a closing delimiter, and taking it
+ * for one would consume that text: the preview would drop it and the serializer
+ * has no way to write it back.
+ */
+function closingBlockDelimiter(line: string): number {
+	const closing = line.indexOf("$$");
+	if (closing < 0) {
+		return -1;
+	}
+	return /^\s*$/.test(line.slice(closing + 2)) ? closing : -1;
 }
 
 function inlineMathRule(state: MarkdownItState, silent: boolean): boolean {
@@ -110,17 +126,22 @@ function blockMathRule(
 	}
 
 	const firstLine = state.src.slice(start + 2, state.eMarks[startLine] ?? 0);
-	const closingOnFirstLine = firstLine.indexOf("$$");
+	const closingOnFirstLine = closingBlockDelimiter(firstLine);
 	const lines = [firstLine];
 	let closingLine = startLine;
 	if (closingOnFirstLine >= 0) {
 		lines[0] = firstLine.slice(0, closingOnFirstLine);
+	} else if (firstLine.includes("$$")) {
+		// The first line holds a `$$` with text after it, so this block has no
+		// closer of its own; a later line is not one, and reading it as the
+		// closer would swallow the text.
+		return false;
 	} else {
 		closingLine = -1;
 		for (let line = startLine + 1; line < endLine; line++) {
 			const lineStart = (state.bMarks[line] ?? 0) + (state.tShift[line] ?? 0);
 			const text = state.src.slice(lineStart, state.eMarks[line] ?? 0);
-			const closing = text.indexOf("$$");
+			const closing = closingBlockDelimiter(text);
 			if (closing >= 0) {
 				lines.push(text.slice(0, closing));
 				closingLine = line;
