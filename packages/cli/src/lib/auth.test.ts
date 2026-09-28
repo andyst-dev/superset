@@ -8,6 +8,16 @@ afterEach(() => {
 	globalThis.fetch = originalFetch;
 });
 
+/**
+ * Let the promise chain's microtasks run so a synchronous settlement (the
+ * login flow does no I/O before it settles in these cases) becomes observable.
+ * A bounded number of ticks keeps a login that never settles from hanging the
+ * test, and avoids any wall-clock wait.
+ */
+async function flushMicrotasks(): Promise<void> {
+	for (let i = 0; i < 4; i++) await Promise.resolve();
+}
+
 describe("login /authorize (single request)", () => {
 	test("opens and prints the SAME url (one /authorize) when loopback is used", async () => {
 		const opened: string[] = [];
@@ -80,6 +90,48 @@ describe("login /authorize (single request)", () => {
 		expect(opened).toHaveLength(0);
 	});
 
+	test("honours a cancellation raised while the authorization URL is handled", async () => {
+		const printed: string[] = [];
+		let pastePrompted = false;
+
+		const controller = new AbortController();
+		let notifyAuthUrl!: () => void;
+		const authUrlEmitted = new Promise<void>((resolve) => {
+			notifyAuthUrl = resolve;
+		});
+		const loginPromise = login(controller.signal, {
+			bindLoopbackServer: async () => null,
+			shouldOpenBrowser: () => true,
+			openBrowser: async () => {},
+			onAuthorizationUrl: (url) => {
+				printed.push(url);
+				// A cancellation raised from here lands after the pre-publish
+				// check and before the abort listener, so login has to re-check
+				// the signal instead of starting a wait nothing can end.
+				controller.abort();
+				notifyAuthUrl();
+			},
+			promptForPastedCode: () => {
+				pastePrompted = true;
+				return new Promise<string>(() => {});
+			},
+		});
+
+		await authUrlEmitted;
+		expect(printed).toHaveLength(1);
+
+		let cancelled: unknown = null;
+		void loginPromise.catch((error) => {
+			cancelled = error;
+		});
+		await flushMicrotasks();
+
+		// A cancelled login must not fall through into the paste wait.
+		expect(pastePrompted).toBe(false);
+		expect(cancelled).toBeInstanceOf(CLIError);
+		expect((cancelled as CLIError).message).toBe("Login cancelled");
+	});
+
 	test("keeps the login alive when the browser launcher rejects", async () => {
 		const printed: string[] = [];
 
@@ -89,8 +141,11 @@ describe("login /authorize (single request)", () => {
 			notifyAuthUrl = resolve;
 		});
 		const loginPromise = login(controller.signal, {
+			// `waitForCallback` attaches a "request" listener, so the stub must
+			// expose `on`: without it the login rejects on a missing method and
+			// the test never reaches the callback wait it means to exercise.
 			bindLoopbackServer: async () => ({
-				server: { close: () => {} } as never,
+				server: { on: () => {}, close: () => {} } as never,
 				port: 51789,
 			}),
 			shouldOpenBrowser: () => true,
@@ -109,8 +164,22 @@ describe("login /authorize (single request)", () => {
 		await authUrlEmitted;
 		expect(printed).toHaveLength(1);
 
+		let settled = false;
+		void loginPromise.then(
+			() => {
+				settled = true;
+			},
+			() => {
+				settled = true;
+			},
+		);
+		// The launcher rejection must not settle the login: it stays pending
+		// until the callback arrives or the caller cancels.
+		await flushMicrotasks();
+		expect(settled).toBe(false);
+
 		controller.abort();
-		await loginPromise.catch(() => {});
+		await expect(loginPromise).rejects.toThrow("Login cancelled");
 	});
 
 	test("prints the paste URL and opens nothing when loopback is unavailable", async () => {

@@ -384,6 +384,15 @@ export async function login(
 			};
 			signal.addEventListener("abort", onOuterAbort);
 
+			// `onAuthorizationUrl` (or the browser launch) may have cancelled
+			// the login before this listener existed. A listener added to an
+			// already-aborted signal never fires, so trigger the cancellation
+			// here instead of starting a wait for a callback that cannot come.
+			if (signal.aborted) {
+				onOuterAbort();
+				return;
+			}
+
 			// Drive only the flow whose URL was presented. When the loopback
 			// flow is active, no paste URL was shown, so running the paste prompt
 			// lets an accidental/invalid paste abort a valid browser login and a
