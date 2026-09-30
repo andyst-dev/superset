@@ -36,18 +36,67 @@ export function isNonTextPaste(event: ClipboardEvent): boolean {
 	return (data.files?.length ?? 0) > 0;
 }
 
+/**
+ * True only when every file on the clipboard is an image.
+ *
+ * `isNonTextPaste` is true for ANY file payload, because Chromium synthesizes a
+ * File entry for a copied document exactly as it does for a screenshot. The
+ * path below it is an IMAGE path — it signals `^V` so a TUI attaches the
+ * payload — so a copied PDF, archive or script reached Claude Code as an
+ * attachment instead of a path (#7904). The MIME type is the one signal that
+ * separates them; it is always present for a Chromium file entry.
+ */
+export function isImageFilePaste(event: ClipboardEvent): boolean {
+	const files = Array.from(event.clipboardData?.files ?? []).filter(
+		(file): file is File => Boolean(file?.type),
+	);
+	return (
+		files.length > 0 && files.every((file) => file.type.startsWith("image/"))
+	);
+}
+
+function filePaths(files: File[]): string[] {
+	return files
+		.map((file) => {
+			const absolute = (
+				globalThis as unknown as {
+					window?: {
+						webUtils?: { getPathForFile?: (file: File) => string };
+					};
+				}
+			).window?.webUtils?.getPathForFile?.(file);
+			return absolute || file.name;
+		})
+		.filter(Boolean);
+}
+
 export function handleImagePasteFallback(
 	event: ClipboardEvent,
 	terminal: XTerm,
 	getOverride?: () => ImagePasteOverride | null,
 ): void {
 	if (!isNonTextPaste(event)) return;
+
+	const files = Array.from(event.clipboardData?.files ?? []);
+
+	if (!isImageFilePaste(event)) {
+		// A file that is not an image wants its path as text. Pasting nothing
+		// here is what made the gesture look like it did something while the
+		// document never arrived.
+		const paths = filePaths(files);
+		if (paths.length === 0) return;
+		event.preventDefault();
+		event.stopImmediatePropagation();
+		terminal.paste(paths.join(" "));
+		return;
+	}
+
 	event.preventDefault();
 	event.stopImmediatePropagation();
 	const override = getOverride?.() ?? null;
 	if (override) {
 		// File handles stay readable after dispatch; the list itself doesn't.
-		override(Array.from(event.clipboardData?.files ?? []));
+		override(files);
 		return;
 	}
 	terminal.input("\x16", true);
