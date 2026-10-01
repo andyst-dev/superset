@@ -328,6 +328,20 @@ describe("isImageFilePaste", () => {
 		});
 		expect(isImageFilePaste(event)).toBe(false);
 	});
+
+	it("rejects an image next to a file whose type the browser could not tell", () => {
+		// `File.type` is empty when the browser cannot determine the MIME type
+		// (w3.org), and dropping those entries first made this payload read as
+		// "all images" — the unknown file was filtered out, `every()` then held,
+		// and the pair took the image path (override, or `^V` to the TUI) instead
+		// of pasting both paths. An unconfirmed type is not an image.
+		const { event } = clipboardEvent({
+			types: ["Files"],
+			getData: () => "",
+			files: [imageFile(), { name: "mystery", type: "" }],
+		});
+		expect(isImageFilePaste(event)).toBe(false);
+	});
 });
 
 describe("pasting a file that is not an image", () => {
@@ -362,5 +376,34 @@ describe("pasting a file that is not an image", () => {
 
 		expect(override).not.toHaveBeenCalled();
 		expect(paste).toHaveBeenCalledWith("notes.pdf");
+	});
+
+	it("quotes a path a shell would split, and leaves a plain one untouched", () => {
+		// #7904 review: `/Users/alice/Downloads/annual report.pdf` pasted
+		// unquoted became two arguments, so `cat ` opened neither file. Only the
+		// paths that need it are quoted — the ordinary single-word case must stay
+		// byte-for-byte what it was, since it is also what a TUI reads as an
+		// attachment mention.
+		const cases: [string, string][] = [
+			["notes.pdf", "notes.pdf"],
+			[
+				"/Users/alice/Downloads/annual report.pdf",
+				"'/Users/alice/Downloads/annual report.pdf'",
+			],
+			["it's mine.pdf", "'it'\\''s mine.pdf'"],
+		];
+
+		for (const [name, expected] of cases) {
+			const { event } = clipboardEvent({
+				types: ["Files"],
+				getData: () => "",
+				files: [pdfFile(name)],
+			});
+			const { terminal, paste } = makeFakeTerminal();
+
+			handleImagePasteFallback(event, terminal);
+
+			expect(paste).toHaveBeenCalledWith(expected);
+		}
 	});
 });
