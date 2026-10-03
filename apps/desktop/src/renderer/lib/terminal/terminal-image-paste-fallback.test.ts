@@ -363,19 +363,58 @@ describe("pasting a file that is not an image", () => {
 		expect(flags.immediateStopped).toBe(true);
 	});
 
-	it("never routes a document to the image override", () => {
-		const { event } = clipboardEvent({
+	it("routes a remote document through the override instead of pasting a local path", () => {
+		// A sandbox or relay-reached PTY cannot read a local path, so a
+		// document in a remote workspace ships its bytes through the override,
+		// exactly like an image paste does (#7904 review).
+		const { event, flags } = clipboardEvent({
 			types: ["Files"],
 			getData: () => "",
-			files: [pdfFile()],
+			files: [pdfFile("contract.pdf")],
 		});
 		const { terminal, paste } = makeFakeTerminal();
 		const override = mock((_files: File[]) => {});
 
 		handleImagePasteFallback(event, terminal, () => override);
 
-		expect(override).not.toHaveBeenCalled();
-		expect(paste).toHaveBeenCalledWith("notes.pdf");
+		expect(override).toHaveBeenCalled();
+		expect(paste).not.toHaveBeenCalled();
+		expect(flags.defaultPrevented).toBe(true);
+		expect(flags.immediateStopped).toBe(true);
+	});
+
+	it("resolves a pasted file's absolute path through webUtils.getPathForFile", () => {
+		// The headline path-resolution branch (webUtils.getPathForFile) is the
+		// reason a document pastes its real absolute path, not its basename, yet
+		// no case stubbed the resolver let every paste go through file.name. A
+		// regression that pastes the basename would otherwise pass all suites.
+		const existingWebUtils = (globalThis as any).window?.webUtils;
+		const getPathForFile = mock(
+			() => "/Users/alice/Downloads/annual report.pdf",
+		);
+		if (!(globalThis as any).window) (globalThis as any).window = {};
+		(globalThis as any).window.webUtils = { getPathForFile };
+		try {
+			const { event } = clipboardEvent({
+				types: ["Files"],
+				getData: () => "",
+				files: [pdfFile("annual report.pdf")],
+			});
+			const { terminal, paste } = makeFakeTerminal();
+
+			handleImagePasteFallback(event, terminal);
+
+			expect(getPathForFile).toHaveBeenCalled();
+			expect(paste).toHaveBeenCalledWith(
+				"'/Users/alice/Downloads/annual report.pdf'",
+			);
+		} finally {
+			if (existingWebUtils) {
+				(globalThis as any).window.webUtils = existingWebUtils;
+			} else {
+				delete (globalThis as any).window.webUtils;
+			}
+		}
 	});
 
 	it("quotes a path a shell would split, and leaves a plain one untouched", () => {

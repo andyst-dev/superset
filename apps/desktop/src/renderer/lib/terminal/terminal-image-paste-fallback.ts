@@ -99,8 +99,22 @@ export function handleImagePasteFallback(
 	const files = Array.from(event.clipboardData?.files ?? []);
 
 	if (!isImageFilePaste(event)) {
-		// A file that is not an image wants its path as text. Pasting nothing
-		// here is what made the gesture look like it did something while the
+		// A remote workspace's PTY shell cannot read a local path, so a
+		// document paste there must ship the bytes through the override like
+		// an image paste does — pasting `/Users/alice/...` into a sandbox that
+		// never saw that file is the same dead end as attaching an image by
+		// name. The override consulted here is the same one the image branch
+		// uses; only a local workspace (no override) falls back to text.
+		const override = getOverride?.() ?? null;
+		if (override) {
+			event.preventDefault();
+			event.stopImmediatePropagation();
+			override(files);
+			return;
+		}
+
+		// A local non-image file wants its path as text. Pasting nothing here
+		// is what made the gesture look like it did something while the
 		// document never arrived.
 		const paths = filePaths(files).map(quotePath);
 		if (paths.length === 0) return;
