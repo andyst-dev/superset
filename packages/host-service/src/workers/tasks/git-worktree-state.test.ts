@@ -173,6 +173,38 @@ test("a squash merge onto an ADVANCED base is still recognised", async () => {
 	expect(result.hasUnpushedCommits).toBe(false);
 });
 
+test("the remote's default branch answers, not a branch that merely exists", async () => {
+	// A repo that kept a `main` next to a `master` default: this branch's work
+	// sits in `main`, so reading `main` because the name exists answers for a
+	// ref the work would never land in — and clears the warning while the
+	// default branch lacks it (#8103 review).
+	const { remote, clone } = makeRemoteAndClone();
+	writeFileSync(join(clone, "work.txt"), "work\n");
+	git(clone, ["add", "."]);
+	git(clone, ["commit", "-qm", "work"]);
+	git(clone, ["push", "-q", "origin", "main"]);
+
+	// `master` exists too, and is the remote's default.
+	git(clone, ["checkout", "-q", "-b", "master", "HEAD~1"]);
+	git(clone, ["push", "-q", "origin", "master"]);
+	git(remote, ["symbolic-ref", "HEAD", "refs/heads/master"]);
+	git(clone, ["remote", "set-head", "origin", "--auto"]);
+
+	git(clone, ["checkout", "-q", "main"]);
+	// No upstream, which is what sends the probe to the remote's default.
+	git(clone, ["branch", "--unset-upstream", "main"]);
+	// Rewritten locally, so the commit is unreachable from every remote ref
+	// while its tree is still the tip of `origin/main`.
+	git(clone, ["commit", "-q", "--amend", "-m", "work (local)"]);
+
+	const result = await gitWorktreeStateTask.handler(
+		{ worktreePath: clone, gitEnv: NOOP_ENV },
+		() => {},
+	);
+
+	expect(result.hasUnpushedCommits).toBe(true);
+});
+
 test("an identical tree on another branch does not clear a real warning", async () => {
 	// The mirror failure of a tip-tree comparison: this branch's content is
 	// pushed under a DIFFERENT name, so some remote tip carries its tree, while

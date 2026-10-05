@@ -10,7 +10,10 @@ import {
 	type ResolvedGitInfo,
 	readGitIdentity,
 } from "../../runtime/git/identity.ts";
-import { resolveRef } from "../../runtime/git/refs.ts";
+import {
+	resolveDefaultBranchName,
+	resolveRef,
+} from "../../runtime/git/refs.ts";
 import { createUserSimpleGit } from "../../runtime/git/simple-git.ts";
 import {
 	readWorkspaceRefs,
@@ -323,15 +326,22 @@ async function baseRemoteRef(
 	} catch {
 		// A workspace branch usually has no upstream configured.
 	}
-	// `git fetch` never updates `refs/remotes/origin/HEAD`, so a remote whose
-	// default branch was renamed leaves it pointing at the old name. It is the
-	// last resort, after the branch refs fetch DOES keep current (#8103
-	// review).
-	candidates.push(
+	// With no upstream, the ref this work would have landed in is the remote's
+	// DEFAULT branch — the same one new worktrees fork from — not whichever of
+	// `main` / `master` happens to exist: a repo that kept a stale `main` next
+	// to a `master` default would otherwise be answered by a ref this work
+	// never targets (#8103 review). The conventional names follow, and
+	// `origin/HEAD` last: `git fetch` never updates that symref, so it is the
+	// one that can be pointing at a branch that was renamed away.
+	const defaultRef = `refs/remotes/origin/${await resolveDefaultBranchName(git)}`;
+	for (const ref of [
+		defaultRef,
 		"refs/remotes/origin/main",
 		"refs/remotes/origin/master",
 		"refs/remotes/origin/HEAD",
-	);
+	]) {
+		if (!candidates.includes(ref)) candidates.push(ref);
+	}
 	for (const ref of candidates) {
 		try {
 			await git.raw(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
