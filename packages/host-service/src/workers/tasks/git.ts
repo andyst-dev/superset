@@ -323,10 +323,14 @@ async function baseRemoteRef(
 	} catch {
 		// A workspace branch usually has no upstream configured.
 	}
+	// `git fetch` never updates `refs/remotes/origin/HEAD`, so a remote whose
+	// default branch was renamed leaves it pointing at the old name. It is the
+	// last resort, after the branch refs fetch DOES keep current (#8103
+	// review).
 	candidates.push(
-		"refs/remotes/origin/HEAD",
 		"refs/remotes/origin/main",
 		"refs/remotes/origin/master",
+		"refs/remotes/origin/HEAD",
 	);
 	for (const ref of candidates) {
 		try {
