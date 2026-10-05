@@ -388,11 +388,12 @@ describe("pasting a file that is not an image", () => {
 		// reason a document pastes its real absolute path, not its basename, yet
 		// no case stubbed the resolver let every paste go through file.name. A
 		// regression that pastes the basename would otherwise pass all suites.
+		const hadWindow = Boolean((globalThis as any).window);
 		const existingWebUtils = (globalThis as any).window?.webUtils;
 		const getPathForFile = mock(
 			() => "/Users/alice/Downloads/annual report.pdf",
 		);
-		if (!(globalThis as any).window) (globalThis as any).window = {};
+		if (!hadWindow) (globalThis as any).window = {};
 		(globalThis as any).window.webUtils = { getPathForFile };
 		try {
 			const { event } = clipboardEvent({
@@ -409,7 +410,12 @@ describe("pasting a file that is not an image", () => {
 				"'/Users/alice/Downloads/annual report.pdf'",
 			);
 		} finally {
-			if (existingWebUtils) {
+			// The stub must not leak: `window` itself is only deleted when this
+			// case created it, otherwise a later suite would observe a phantom
+			// global that the code checks for existence.
+			if (!hadWindow) {
+				delete (globalThis as any).window;
+			} else if (existingWebUtils) {
 				(globalThis as any).window.webUtils = existingWebUtils;
 			} else {
 				delete (globalThis as any).window.webUtils;
