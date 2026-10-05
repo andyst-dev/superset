@@ -306,6 +306,67 @@ export const gitAuthorNameTask = defineWorkerTask<
 // Delete-preview + destroy-preflight state for workspace cleanup.
 // Unpushed-commit detection uses `rev-list --not --remotes` so brand-new
 // branches with no upstream still report unpushed commits correctly.
+/**
+ * The ref this branch's work would have landed in: its configured upstream
+ * when it has one, otherwise the remote's default branch. Only that ref can
+ * answer "is this work already upstream" — an unrelated branch carrying the
+ * same tree would answer yes for commits that are still local.
+ */
+async function baseRemoteRef(
+	git: ReturnType<typeof createUserSimpleGit>,
+): Promise<string | null> {
+	const candidates: string[] = [];
+	try {
+		candidates.push(
+			(await git.raw(["rev-parse", "--abbrev-ref", "@{upstream}"])).trim(),
+		);
+	} catch {
+		// A workspace branch usually has no upstream configured.
+	}
+	candidates.push(
+		"refs/remotes/origin/HEAD",
+		"refs/remotes/origin/main",
+		"refs/remotes/origin/master",
+	);
+	for (const ref of candidates) {
+		try {
+			await git.raw(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+			return ref;
+		} catch {
+			// Not this one — try the next candidate.
+		}
+	}
+	return null;
+}
+
+/**
+ * Whether `base` already contains this branch's work, i.e. merging HEAD into
+ * it would change nothing. That is what a squash merge leaves behind (the
+ * content is there under a new sha), and it stays false for a branch whose
+ * commits only exist locally.
+ *
+ * Equal trees short-circuit; otherwise `merge-tree --write-tree` prints the
+ * merged tree, and an exit code means conflicts (or a git too old for the
+ * flag) — neither is a signal to act on.
+ */
+async function headIsContainedIn(
+	git: ReturnType<typeof createUserSimpleGit>,
+	base: string,
+): Promise<boolean> {
+	const headTree = (await git.raw(["rev-parse", "HEAD^{tree}"])).trim();
+	const baseTree = (await git.raw(["rev-parse", `${base}^{tree}`])).trim();
+	if (headTree === baseTree) return true;
+	try {
+		const merged = (await git.raw(["merge-tree", "--write-tree", base, "HEAD"]))
+			.trim()
+			.split("\n")[0]
+			?.trim();
+		return merged === baseTree;
+	} catch {
+		return false;
+	}
+}
+
 export const gitWorktreeStateTask = defineWorkerTask<
 	{
 		worktreePath: string;
@@ -338,43 +399,23 @@ export const gitWorktreeStateTask = defineWorkerTask<
 		}
 		// A squash merge flattens the branch's commits into a new sha on the
 		// remote, so `HEAD --not --remotes` still counts every one of them —
-		// and once GitHub prunes the head branch, they look unpushed. But the
-		// squash carries the branch's final tree: if any remote-tracking tip
-		// has the same tree as HEAD, the work is already upstream and gated
-		// behind a sha rename. Reset only on a tree match, so a genuinely
-		// unpushed branch (different tree) still warns.
+		// and once GitHub prunes the head branch, they look unpushed. The
+		// question that settles it is whether the branch's work is already in
+		// the ref it would have landed in, and a matching tree answers it
+		// neither way: a base that advanced before the squash carries the
+		// branch's changes in a DIFFERENT tree (so a tip-tree comparison misses
+		// the ordinary case), while an unrelated remote branch can hold the same
+		// tree with the commits still local (so it would clear a real warning).
+		// Ask git instead: merging HEAD into the base changes nothing when the
+		// base already contains this work.
 		if (hasUnpushedCommits) {
 			try {
-				const headTree = (
-					await git.raw(["rev-parse", "HEAD^{tree}"])
-				).trim();
-				const remoteRefs = (
-					await git.raw([
-						"for-each-ref",
-						"--format=%(refname)",
-						"refs/remotes",
-					])
-				)
-					.trim()
-					.split(/\s+/)
-					.filter(Boolean);
-				if (remoteRefs.length > 0) {
-					const remoteTrees = (
-						await git.raw([
-							"rev-parse",
-							...remoteRefs.map((ref) => `${ref}^{tree}`),
-						])
-					)
-						.trim()
-						.split(/\s+/)
-						.filter(Boolean);
-					if (remoteTrees.includes(headTree)) {
-						hasUnpushedCommits = false;
-					}
+				const base = await baseRemoteRef(git);
+				if (base && (await headIsContainedIn(git, base))) {
+					hasUnpushedCommits = false;
 				}
 			} catch {
-				// Leave it unpushed — a failing tree probe isn't a signal we
-				// can act on.
+				// Leave it unpushed — a failing probe isn't a signal we can act on.
 			}
 		}
 		return { hasChanges: !status.isClean(), hasUnpushedCommits };

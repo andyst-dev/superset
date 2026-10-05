@@ -1,10 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import {
-	mkdtempSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type GitTaskEnv, gitWorktreeStateTask } from "./git";
@@ -81,6 +77,36 @@ function makeSquashMergedWorktree(): string {
 	return clone;
 }
 
+/** A squash merge whose base ADVANCED first: the squashed tree carries the
+ * other change too, so it no longer equals the feature tip's tree. */
+function makeSquashMergedWorktreeOnAdvancedBase(): string {
+	const { clone } = makeRemoteAndClone();
+	git(clone, ["checkout", "-qb", "feature/x"]);
+	for (let i = 1; i <= 3; i++) {
+		writeFileSync(join(clone, `file-${i}.txt`), `content ${i}\n`);
+		git(clone, ["add", "."]);
+		git(clone, ["commit", "-qm", `feature c${i}`]);
+	}
+	git(clone, ["push", "-q", "origin", "feature/x"]);
+
+	// Another PR lands on main before the squash.
+	git(clone, ["checkout", "-q", "main"]);
+	writeFileSync(join(clone, "other.txt"), "other work\n");
+	git(clone, ["add", "."]);
+	git(clone, ["commit", "-qm", "other work on main"]);
+	git(clone, ["push", "-q", "origin", "main"]);
+
+	// The real squash flow, so the squashed tree differs from the branch tip's.
+	git(clone, ["merge", "-q", "--squash", "feature/x"]);
+	git(clone, ["commit", "-qm", "feat: merge the branch (#N)"]);
+	git(clone, ["push", "-q", "origin", "main"]);
+
+	git(clone, ["push", "-q", "origin", ":feature/x"]);
+	git(clone, ["fetch", "-q", "--prune", "origin"]);
+	git(clone, ["checkout", "-q", "feature/x"]);
+	return clone;
+}
+
 const NOOP_ENV = {} as GitTaskEnv;
 
 test("a squash-merged, pruned head branch is not 'unpushed commits'", async () => {
@@ -123,6 +149,48 @@ test("a genuinely unpushed branch still reports 'unpushed commits'", async () =>
 		git(clone, ["commit", "-qm", `abandoned c${i}`]);
 	}
 	// Not pushed: origin has only `main`.
+
+	const result = await gitWorktreeStateTask.handler(
+		{ worktreePath: clone, gitEnv: NOOP_ENV },
+		() => {},
+	);
+
+	expect(result.hasUnpushedCommits).toBe(true);
+});
+
+test("a squash merge onto an ADVANCED base is still recognised", async () => {
+	// The ordinary case on an active repo, and the one a tip-tree comparison
+	// misses: `main` gained other work before the squash, so the squashed tree
+	// is not the branch tip's tree. What is true either way is that merging this
+	// branch into main changes nothing — its work is already there (#8035).
+	const worktree = makeSquashMergedWorktreeOnAdvancedBase();
+
+	const result = await gitWorktreeStateTask.handler(
+		{ worktreePath: worktree, gitEnv: NOOP_ENV },
+		() => {},
+	);
+
+	expect(result.hasUnpushedCommits).toBe(false);
+});
+
+test("an identical tree on another branch does not clear a real warning", async () => {
+	// The mirror failure of a tip-tree comparison: this branch's content is
+	// pushed under a DIFFERENT name, so some remote tip carries its tree, while
+	// its own work is nowhere in the branch it targets. Only the base may
+	// answer, so the warning stays (#8035).
+	const { clone } = makeRemoteAndClone();
+	git(clone, ["checkout", "-qb", "feature/other"]);
+	writeFileSync(join(clone, "other.txt"), "other work\n");
+	git(clone, ["add", "."]);
+	git(clone, ["commit", "-qm", "other work"]);
+
+	// Pushed under another name, so that remote tip carries this tree...
+	git(clone, ["push", "-q", "origin", "feature/other:feature/twin"]);
+	// ...and the local commit is then rewritten, which keeps the tree while
+	// making the commit itself unreachable from any remote ref: exactly the
+	// state a tip-tree comparison reads as "already pushed".
+	git(clone, ["commit", "-q", "--amend", "-m", "other work (local)"]);
+	git(clone, ["fetch", "-q", "origin"]);
 
 	const result = await gitWorktreeStateTask.handler(
 		{ worktreePath: clone, gitEnv: NOOP_ENV },
