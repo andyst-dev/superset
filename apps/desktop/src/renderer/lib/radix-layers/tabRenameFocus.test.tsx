@@ -48,23 +48,53 @@ function RenameInput() {
 	return <input ref={inputRef} aria-label="Tab title" defaultValue="Terminal" />;
 }
 
-function Tab({ deferRename }: { deferRename: boolean }) {
+function Tab({
+	deferRename,
+	onMenuClosed,
+}: {
+	deferRename: boolean;
+	onMenuClosed?: () => void;
+}) {
 	const [isEditing, setIsEditing] = useState(false);
 	const pendingRename = useRef(false);
+	// Mirrors the tab's wiring: the mousedown still sees the focused element,
+	// before the browser blurs it to <body>.
+	const focusedBeforeMenu = useRef<HTMLElement | null>(null);
 	const startEditing = () => setIsEditing(true);
 
 	return (
 		<ContextMenu>
 			<ContextMenuTrigger asChild>
-				<div data-testid="tab">Terminal</div>
+				<div
+					data-testid="tab"
+					onMouseDownCapture={(event) => {
+						if (event.button !== 2) return;
+						const active = document.activeElement as HTMLElement | null;
+						focusedBeforeMenu.current =
+							active && active !== document.body ? active : null;
+					}}
+				>
+					Terminal
+				</div>
 			</ContextMenuTrigger>
 			<ContextMenuContent
 				onCloseAutoFocus={(event) => {
-					event.preventDefault();
 					if (pendingRename.current) {
+						event.preventDefault();
 						pendingRename.current = false;
 						startEditing();
+					} else {
+						const target = focusedBeforeMenu.current;
+						focusedBeforeMenu.current = null;
+						if (
+							target?.isConnected &&
+							document.activeElement === document.body
+						) {
+							event.preventDefault();
+							target.focus({ preventScroll: true });
+						}
 					}
+					onMenuClosed?.();
 				}}
 			>
 				<ContextMenuItem
@@ -84,8 +114,23 @@ function Tab({ deferRename }: { deferRename: boolean }) {
 	);
 }
 
+/**
+ * A promise resolved from the menu's `onCloseAutoFocus`, so a test waits for
+ * the close itself instead of guessing at it with a wall-clock delay.
+ */
+function deferred() {
+	let resolve: (() => void) | undefined;
+	const promise = new Promise<void>((r) => {
+		resolve = r;
+	});
+	return { promise, resolve: () => resolve?.() };
+}
+
 async function renameFromMenu(deferRename: boolean) {
-	const view = render(<Tab deferRename={deferRename} />);
+	const closed = deferred();
+	const view = render(
+		<Tab deferRename={deferRename} onMenuClosed={closed.resolve} />,
+	);
 	const page = within(view.baseElement as HTMLElement);
 	await act(async () => {
 		fireEvent.contextMenu(page.getByTestId("tab"));
@@ -94,23 +139,59 @@ async function renameFromMenu(deferRename: boolean) {
 		fireEvent.click(page.getByRole("menuitem", { name: "Rename" }));
 	});
 	const input = await page.findByRole("textbox", { name: "Tab title" });
-	return input;
+	return { input, menuClosed: closed.promise };
 }
 
 describe("renaming a tab from its context menu", () => {
 	test("the field holds the focus once the menu has closed", async () => {
-		const input = await renameFromMenu(true);
+		const { input } = await renameFromMenu(true);
 
 		await waitFor(() => expect(document.activeElement).toBe(input));
 	});
 
 	test("starting the rename during the close leaves the field unfocused", async () => {
-		const input = await renameFromMenu(false);
+		const { input, menuClosed } = await renameFromMenu(false);
 
-		// Let the menu finish closing, including handing focus back.
+		// Wait for the menu to finish closing, including handing focus back,
+		// instead of racing it with a fixed delay.
 		await act(async () => {
-			await new Promise((resolve) => setTimeout(resolve, 60));
+			await menuClosed;
 		});
 		expect(document.activeElement).not.toBe(input);
+	});
+
+	test("a plain dismissal hands focus back where it was", async () => {
+		const closed = deferred();
+		const view = render(
+			<>
+				<button data-testid="outside" type="button">
+					outside
+				</button>
+				<Tab deferRename onMenuClosed={closed.resolve} />
+			</>,
+		);
+		const page = within(view.baseElement as HTMLElement);
+		const outside = page.getByTestId("outside");
+		const tab = page.getByTestId("tab");
+		outside.focus();
+
+		// The real gesture, in the order the browser runs it: the mousedown
+		// still sees the focused element, and only then does Chromium blur it
+		// to <body>. happy-dom's synthetic mousedown has no default action, so
+		// the blur is applied by hand - it is the measured behaviour that makes
+		// Radix's own restoration useless here.
+		await act(async () => {
+			fireEvent.mouseDown(tab, { button: 2 });
+			(document.activeElement as HTMLElement | null)?.blur();
+			fireEvent.contextMenu(tab);
+		});
+		await act(async () => {
+			fireEvent.keyDown(document, { key: "Escape" });
+		});
+		await act(async () => {
+			await closed.promise;
+		});
+
+		expect(document.activeElement).toBe(outside);
 	});
 });
